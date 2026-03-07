@@ -2,6 +2,7 @@
 //!
 //! Provides support for JIT-compiled code to call external Rust functions.
 //! This enables I/O, memory allocation, and other runtime services.
+#![allow(dead_code)]
 
 use crate::jit::encoder::{encode_blr, encode_mov64, Reg};
 use crate::jit::runtime;

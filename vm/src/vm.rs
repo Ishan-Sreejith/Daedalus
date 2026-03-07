@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::io::{self, Read, Write};
 
 #[derive(Default, Debug)]
@@ -14,20 +15,28 @@ enum Operand {
     Reg(usize),
     Imm(i64),
     // For memory operands like [sp, #16]
-    Mem { base: usize, offset: i64 },
+    Mem {
+        base: usize,
+        offset: i64,
+        writeback: bool,
+    },
+    // For indexed memory operands like [x21, x22, lsl #3]
+    MemIndexed { base: usize, index: usize, lsl: u8 },
     // For adrp/add label combos
     Label(usize),
+    // External symbol labels (for BL syscall shims) - we'll need to handle this differently
+    LabelName(usize), // Changed from String to usize for Copy trait
 }
 
 #[derive(Debug, Clone, Copy)]
 enum OpCode {
-    ADD, SUB, MUL, SDIV, UDIV, MSUB, NEG, UXTW,
+    ADD, SUB, MUL, SDIV, UDIV, MOD, MSUB, NEG, UXTW,
     FADD, FSUB, FMUL, FDIV, FMOV,
     AND, ORR, EOR, MVN, LSL, LSR,
     MOV, LDR, LDRB, STR, STRB, STP, LDP,
     B, BL, RET,
     CMP, CSET,
-    B_COND(Condition),
+    BCond(Condition),
     CBZ, CBNZ,
     ADRP,
     SVC,
@@ -41,10 +50,20 @@ enum Condition {
 }
 
 #[derive(Debug, Clone)]
-struct Instruction {
+pub(crate) struct Instruction {
     opcode: OpCode,
     // Using Vec for flexibility; most instructions use 2-3 operands.
     operands: Vec<Operand>,
+}
+
+impl fmt::Display for Instruction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.opcode)?;
+        if !self.operands.is_empty() {
+            write!(f, " {:?}", self.operands)?;
+        }
+        Ok(())
+    }
 }
 
 /// ARM64 Virtual Machine
@@ -63,6 +82,8 @@ pub struct VM {
     pub data_segment_offset: usize,
     /// Labels for jumps (code and data)
     pub labels: HashMap<String, usize>,
+    /// Label names lookup table (for LabelName operands)
+    pub label_names: HashMap<usize, String>,
     /// Program instructions (now in a bytecode format)
     pub program: Vec<Instruction>,
     /// For debugging: map PC to original source line
@@ -75,6 +96,8 @@ pub struct VM {
     pub heap_ptr: usize,
     /// Tracked heap allocations (ptr -> size)
     allocations: HashMap<usize, usize>,
+    /// Freed heap blocks available for reuse (ptr, size)
+    free_list: Vec<(usize, usize)>,
     /// Condition flags
     flags: Flags,
 }
@@ -89,12 +112,14 @@ impl VM {
             memory: vec![0; 2 * 1024 * 1024],
             data_segment_offset: 1024 * 1024, // Data segment starts at 1MB
             labels: HashMap::new(),
+            label_names: HashMap::new(),
             program: Vec::new(),
             debug_info: HashMap::new(),
             running: false,
             step_mode: false,
             heap_ptr: 1024 * 1024, // Heap starts at 1MB
             allocations: HashMap::new(),
+            free_list: Vec::new(),
             flags: Flags::default(),
         }
     }
@@ -144,9 +169,11 @@ impl VM {
         self.step_mode = false;
         self.heap_ptr = 1024 * 1024;
         self.allocations.clear();
+        self.free_list.clear();
         self.memory.fill(0);
         self.program.clear();
         self.labels.clear();
+        self.label_names.clear();
         self.debug_info.clear();
     }
 
@@ -244,6 +271,11 @@ impl VM {
                 if v2 == 0 { self.set_reg_op(ops[0], 0); }
                 else { self.set_reg_op(ops[0], ((self.get_op(ops[1])? as u64) / v2) as i64); }
             }
+            MOD => {
+                let v2 = self.get_op(ops[2])?;
+                if v2 == 0 { return Err("Modulo by zero".to_string()); }
+                self.set_reg_op(ops[0], self.get_op(ops[1])? % v2);
+            }
             MSUB => self.set_reg_op(ops[0], self.get_op(ops[3])?.wrapping_sub(self.get_op(ops[1])?.wrapping_mul(self.get_op(ops[2])?))),
             NEG => self.set_reg_op(ops[0], 0i64.wrapping_sub(self.get_op(ops[1])?)),
             UXTW => self.set_reg_op(ops[0], (self.get_op(ops[1])? as u64 & 0xFFFF_FFFF) as i64),
@@ -267,47 +299,63 @@ impl VM {
             MOV => self.set_reg_op(ops[0], self.get_op(ops[1])?),
             LDR => {
                 let addr = self.get_addr(ops[1])?;
-                let val = i64::from_le_bytes(self.memory[addr..addr+8].try_into().unwrap());
+                let val = self.read_i64(addr)?;
                 self.set_reg_op(ops[0], val);
             }
             LDRB => {
                 let addr = self.get_addr(ops[1])?;
-                self.set_reg_op(ops[0], self.memory[addr] as i64);
+                self.set_reg_op(ops[0], self.read_u8(addr)? as i64);
             }
             STR => {
                 let val = self.get_op(ops[0])?;
                 let addr = self.get_addr(ops[1])?;
-                self.memory[addr..addr+8].copy_from_slice(&val.to_le_bytes());
+                self.write_i64(addr, val)?;
             }
             STRB => {
                 let val = (self.get_op(ops[0])? & 0xFF) as u8;
                 let addr = self.get_addr(ops[1])?;
-                self.memory[addr] = val;
+                self.write_u8(addr, val)?;
             }
             STP => {
                 let val1 = self.get_op(ops[0])?;
                 let val2 = self.get_op(ops[1])?;
                 let addr = self.get_addr(ops[2])?;
-                self.memory[addr..addr+8].copy_from_slice(&val1.to_le_bytes());
-                self.memory[addr+8..addr+16].copy_from_slice(&val2.to_le_bytes());
-                if let Operand::Mem { base, offset } = ops[2] {
+                self.write_i64(addr, val1)?;
+                self.write_i64(addr + 8, val2)?;
+                if let Operand::Mem { base, offset, .. } = ops[2] {  // Add .. to ignore writeback
                     if let Some(arg_str) = self.debug_info.get(&(self.pc as usize)) {
-                        if arg_str.contains('!') {
-                            self.set_reg(base, self.get_reg(base) + offset);
+                        if arg_str.contains('!') || arg_str.contains("],") {
+                            let writeback = if ops.len() > 3 {
+                                match ops[3] {
+                                    Operand::Imm(imm) => imm,
+                                    _ => offset,
+                                }
+                            } else {
+                                offset
+                            };
+                            self.set_reg(base, self.get_reg(base) + writeback);
                         }
                     }
                 }
             }
             LDP => {
                 let addr = self.get_addr(ops[2])?;
-                let val1 = i64::from_le_bytes(self.memory[addr..addr+8].try_into().unwrap());
-                let val2 = i64::from_le_bytes(self.memory[addr+8..addr+16].try_into().unwrap());
+                let val1 = self.read_i64(addr)?;
+                let val2 = self.read_i64(addr + 8)?;
                 self.set_reg_op(ops[0], val1);
                 self.set_reg_op(ops[1], val2);
-                if let Operand::Mem { base, offset } = ops[2] {
-                     if let Some(arg_str) = self.debug_info.get(&(self.pc as usize)) {
-                        if arg_str.contains("],") { // Post-index
-                            self.set_reg(base, self.get_reg(base) + offset);
+                if let Operand::Mem { base, offset, .. } = ops[2] {  // Add .. to ignore writeback
+                    if let Some(arg_str) = self.debug_info.get(&(self.pc as usize)) {
+                        if arg_str.contains("],") || arg_str.contains('!') {
+                            let writeback = if ops.len() > 3 {
+                                match ops[3] {
+                                    Operand::Imm(imm) => imm,
+                                    _ => offset,
+                                }
+                            } else {
+                                offset
+                            };
+                            self.set_reg(base, self.get_reg(base) + writeback);
                         }
                     }
                 }
@@ -315,11 +363,26 @@ impl VM {
             B => { self.pc = self.get_op(ops[0])? - 1; }
             BL => {
                 self.registers[30] = self.pc + 1;
-                if let Operand::Label(target) = ops[0] {
-                    self.pc = target as i64 - 1;
-                } else {
-                    let label_name = self.debug_info.get(&(self.pc as usize)).unwrap().split_whitespace().nth(1).unwrap();
-                    self.exec_bl_syscall(label_name)?;
+                match ops[0] {
+                    Operand::Label(target) => {
+                        self.pc = target as i64 - 1;
+                    }
+                    Operand::LabelName(name_id) => {
+                        // Fixed borrow checker issue by cloning
+                        if let Some(label_name) = self.label_names.get(&name_id).cloned() {
+                            self.exec_bl_syscall(&label_name)?;
+                        } else {
+                            // Fallback to parsing from debug info
+                            let label_name = self
+                                .debug_info
+                                .get(&(self.pc as usize))
+                                .and_then(|line| line.split_whitespace().nth(1))
+                                .ok_or_else(|| "Malformed BL instruction".to_string())?
+                                .to_string();
+                            self.exec_bl_syscall(&label_name)?;
+                        }
+                    }
+                    _ => return Err("Invalid BL operand".to_string()),
                 }
             }
             RET => { self.pc = self.get_reg(30) - 1; }
@@ -333,11 +396,14 @@ impl VM {
                 self.flags.v = overflow;
             }
             CSET => {
-                let cond = if let OpCode::B_COND(c) = instr.opcode { c } else { unreachable!() };
+                if ops.len() < 2 {
+                    return Err("CSET expects destination and condition".to_string());
+                }
+                let cond = self.decode_condition_operand(ops[1])?;
                 let val = self.check_condition(cond)?;
                 self.set_reg_op(ops[0], if val { 1 } else { 0 });
             }
-            B_COND(cond) => {
+            BCond(cond) => {
                 if self.check_condition(cond)? { self.pc = self.get_op(ops[0])? - 1; }
             }
             CBZ => {
@@ -347,8 +413,9 @@ impl VM {
                 if self.get_op(ops[0])? != 0 { self.pc = self.get_op(ops[1])? - 1; }
             }
             ADRP => {
-                // This is now a pseudo-op, the real work is done by ADD
-                // In a real JIT, this would calculate page addresses. Here, we let ADD handle the label.
+                // Simplified ADRP: materialize page(base) for a label.
+                // ADD with @PAGEOFF will add the low 12 bits.
+                self.set_reg_op(ops[0], self.get_op(ops[1])? & !0xfff);
             }
             SVC => self.exec_svc()?,
             NOP => {},
@@ -381,15 +448,67 @@ impl VM {
     }
 
     fn get_addr(&self, op: Operand) -> Result<usize, String> {
-        if let Operand::Mem { base, offset } = op {
-            let addr = self.get_reg(base) + offset;
-            if addr < 0 { return Err(format!("Memory address underflow: {}", addr)); }
-            Ok(addr as usize)
-        } else {
-            Err("Operand is not a memory address".to_string())
+        match op {
+            Operand::Mem { base, offset, .. } => {  // Add .. to ignore writeback
+                let addr = self.get_reg(base) + offset;
+                if addr < 0 {
+                    return Err(format!("Memory address underflow: {}", addr));
+                }
+                Ok(addr as usize)
+            }
+            Operand::MemIndexed { base, index, lsl } => {
+                let scaled = self.get_reg(index).wrapping_shl(lsl as u32);
+                let addr = self.get_reg(base).wrapping_add(scaled);
+                if addr < 0 {
+                    return Err(format!("Memory address underflow: {}", addr));
+                }
+                Ok(addr as usize)
+            }
+            _ => Err("Operand is not a memory address".to_string()),
         }
     }
-    
+
+    fn check_mem_range(&self, addr: usize, len: usize) -> Result<(), String> {
+        if addr
+            .checked_add(len)
+            .map(|end| end <= self.memory.len())
+            .unwrap_or(false)
+        {
+            Ok(())
+        } else {
+            Err(format!(
+                "Memory access out of bounds at 0x{:x} (len {})",
+                addr, len
+            ))
+        }
+    }
+
+    fn read_u8(&self, addr: usize) -> Result<u8, String> {
+        self.check_mem_range(addr, 1)?;
+        Ok(self.memory[addr])
+    }
+
+    fn write_u8(&mut self, addr: usize, value: u8) -> Result<(), String> {
+        self.check_mem_range(addr, 1)?;
+        self.memory[addr] = value;
+        Ok(())
+    }
+
+    fn read_i64(&self, addr: usize) -> Result<i64, String> {
+        self.check_mem_range(addr, 8)?;
+        Ok(i64::from_le_bytes(
+            self.memory[addr..addr + 8]
+                .try_into()
+                .map_err(|_| "Invalid i64 read".to_string())?,
+        ))
+    }
+
+    fn write_i64(&mut self, addr: usize, value: i64) -> Result<(), String> {
+        self.check_mem_range(addr, 8)?;
+        self.memory[addr..addr + 8].copy_from_slice(&value.to_le_bytes());
+        Ok(())
+    }
+
     fn parse_reg(&self, s: &str) -> Result<usize, String> {
         let s = s.trim();
         if s == "xzr" || s == "wzr" {
@@ -414,6 +533,74 @@ impl VM {
         }
     }
 
+    fn parse_condition_token(&self, s: &str) -> Result<Condition, String> {
+        let t = s.trim().trim_start_matches('.').to_ascii_lowercase();
+        let c = match t.as_str() {
+            "eq" => Condition::EQ,
+            "ne" => Condition::NE,
+            "lt" => Condition::LT,
+            "gt" => Condition::GT,
+            "le" => Condition::LE,
+            "ge" => Condition::GE,
+            "hi" => Condition::HI,
+            "ls" => Condition::LS,
+            "hs" | "cs" => Condition::HS,
+            "lo" | "cc" => Condition::LO,
+            "mi" => Condition::MI,
+            "pl" => Condition::PL,
+            "vs" => Condition::VS,
+            "vc" => Condition::VC,
+            _ => return Err(format!("Unknown condition code: {}", s)),
+        };
+        Ok(c)
+    }
+
+    fn condition_to_code(cond: Condition) -> i64 {
+        match cond {
+            Condition::EQ => 0,
+            Condition::NE => 1,
+            Condition::LT => 2,
+            Condition::GT => 3,
+            Condition::LE => 4,
+            Condition::GE => 5,
+            Condition::HI => 6,
+            Condition::LS => 7,
+            Condition::HS => 8,
+            Condition::LO => 9,
+            Condition::MI => 10,
+            Condition::PL => 11,
+            Condition::VS => 12,
+            Condition::VC => 13,
+        }
+    }
+
+    fn code_to_condition(code: i64) -> Result<Condition, String> {
+        match code {
+            0 => Ok(Condition::EQ),
+            1 => Ok(Condition::NE),
+            2 => Ok(Condition::LT),
+            3 => Ok(Condition::GT),
+            4 => Ok(Condition::LE),
+            5 => Ok(Condition::GE),
+            6 => Ok(Condition::HI),
+            7 => Ok(Condition::LS),
+            8 => Ok(Condition::HS),
+            9 => Ok(Condition::LO),
+            10 => Ok(Condition::MI),
+            11 => Ok(Condition::PL),
+            12 => Ok(Condition::VS),
+            13 => Ok(Condition::VC),
+            _ => Err(format!("Invalid condition code: {}", code)),
+        }
+    }
+
+    fn decode_condition_operand(&self, op: Operand) -> Result<Condition, String> {
+        match op {
+            Operand::Imm(code) => Self::code_to_condition(code),
+            _ => Err("Condition operand must be an immediate condition code".to_string()),
+        }
+    }
+
     fn get_reg(&self, idx: usize) -> i64 {
         if idx == usize::MAX { 0 } else if idx == 31 { self.sp } else { self.registers[idx] }
     }
@@ -425,19 +612,42 @@ impl VM {
     fn set_fp_reg(&mut self, idx: usize, val: f64) { self.fp_registers[idx] = val; }
 
     fn parse_mem_operand(&self, operand: &str) -> Result<Operand, String> {
-        let operand = operand.trim().trim_start_matches('[').trim_end_matches(']');
+        let operand = operand
+            .trim()
+            .trim_end_matches('!')
+            .trim_start_matches('[')
+            .trim_end_matches(']');
         let parts: Vec<&str> = operand.split(',').map(|s| s.trim()).collect();
         let base_reg_idx = self.parse_reg(parts[0])?;
         let mut offset = 0i64;
         if parts.len() > 1 {
             if parts[1].starts_with('#') {
                 offset = self.parse_imm(parts[1])?;
+            } else if parts.len() == 2 {
+                let index_reg_idx = self.parse_reg(parts[1])?;
+                return Ok(Operand::MemIndexed {
+                    base: base_reg_idx,
+                    index: index_reg_idx,
+                    lsl: 0,
+                });
+            } else if parts.len() >= 3 {
+                let index_reg_idx = self.parse_reg(parts[1])?;
+                let lsl = parts[2]
+                    .strip_prefix("lsl")
+                    .map(str::trim)
+                    .ok_or_else(|| "Only lsl scaling is supported for indexed memory operands".to_string())?;
+                let shift = self.parse_imm(lsl)? as u8;
+                return Ok(Operand::MemIndexed {
+                    base: base_reg_idx,
+                    index: index_reg_idx,
+                    lsl: shift,
+                });
             } else {
                 // [base, index, lsl #3] not supported by this simplified parser, but could be added.
                 return Err("Indexed memory operands not supported in this VM version".to_string());
             }
         }
-        Ok(Operand::Mem { base: base_reg_idx, offset })
+        Ok(Operand::Mem { base: base_reg_idx, offset, writeback: false })  // Add writeback field
     }
 
     fn check_condition(&self, cond: Condition) -> Result<bool, String> {
@@ -519,6 +729,23 @@ impl VM {
     fn vm_malloc(&mut self, size: usize) -> Result<usize, String> {
         let aligned = (size + 15) & !15;
         if aligned == 0 { return Ok(0); }
+
+        // First-fit from free list.
+        if let Some((idx, &(ptr, block_size))) = self
+            .free_list
+            .iter()
+            .enumerate()
+            .find(|(_, (_, block_size))| *block_size >= aligned)
+        {
+            self.free_list.swap_remove(idx);
+            if block_size > aligned {
+                self.free_list.push((ptr + aligned, block_size - aligned));
+            }
+            self.allocations.insert(ptr, aligned);
+            self.coalesce_free_list();
+            return Ok(ptr);
+        }
+
         let ptr = (self.heap_ptr + 15) & !15;
         let end = ptr.saturating_add(aligned);
         if end > self.memory.len() { return Err(format!("Out of VM memory allocating {} bytes", aligned)); }
@@ -528,8 +755,10 @@ impl VM {
     }
 
     fn vm_free(&mut self, ptr: usize) {
-        self.allocations.remove(&ptr);
-        // A real implementation would add this to a free list.
+        if let Some(size) = self.allocations.remove(&ptr) {
+            self.free_list.push((ptr, size));
+            self.coalesce_free_list();
+        }
     }
 
     fn vm_realloc(&mut self, old_ptr: usize, new_size: usize) -> Result<usize, String> {
@@ -546,6 +775,25 @@ impl VM {
         }
         self.vm_free(old_ptr);
         Ok(new_ptr)
+    }
+
+    fn coalesce_free_list(&mut self) {
+        if self.free_list.len() <= 1 {
+            return;
+        }
+        self.free_list.sort_by_key(|(ptr, _)| *ptr);
+        let mut merged: Vec<(usize, usize)> = Vec::with_capacity(self.free_list.len());
+        for (ptr, size) in self.free_list.drain(..) {
+            if let Some((last_ptr, last_size)) = merged.last_mut() {
+                let last_end = *last_ptr + *last_size;
+                if last_end == ptr {
+                    *last_size += size;
+                    continue;
+                }
+            }
+            merged.push((ptr, size));
+        }
+        self.free_list = merged;
     }
 
     fn read_c_string(&self, addr: usize) -> Result<String, String> {
@@ -588,44 +836,77 @@ impl VM {
         println!("================\n");
     }
 
-    fn parse_instruction(&self, line: &str) -> Result<Instruction, String> {
-        let parts: Vec<&str> = split_asm_args(line);
-        if parts.is_empty() { return Ok(Instruction { opcode: OpCode::NOP, operands: vec![] }); }
-        let mnemonic = parts[0];
-        let args = &parts[1..];
+    fn intern_label_name(&mut self, label: &str) -> usize {
+        if let Some((id, _)) = self.label_names.iter().find(|(_, name)| name.as_str() == label) {
+            return *id;
+        }
+        let next_id = self
+            .label_names
+            .keys()
+            .max()
+            .copied()
+            .unwrap_or(0)
+            .saturating_add(1);
+        self.label_names.insert(next_id, label.to_string());
+        next_id
+    }
+
+    fn parse_instruction(&mut self, line: &str) -> Result<Instruction, String> {
+        let line = line.trim();
+        if line.is_empty() {
+            return Ok(Instruction { opcode: OpCode::NOP, operands: vec![] });
+        }
+        let (mnemonic, args_str) = match line.find(char::is_whitespace) {
+            Some(i) => (&line[..i], line[i..].trim()),
+            None => (line, ""),
+        };
+        let args: Vec<String> = if args_str.is_empty() {
+            Vec::new()
+        } else {
+            split_asm_args(args_str)
+        };
 
         let mut operands = Vec::new();
-        for arg in args {
+        for arg in &args {
             if arg.starts_with('[') {
                 operands.push(self.parse_mem_operand(arg)?);
             } else if arg.starts_with('#') {
                 operands.push(Operand::Imm(self.parse_imm(arg)?));
-            } else if self.labels.contains_key(*arg) {
-                operands.push(Operand::Label(self.labels[*arg]));
-            } else if arg.starts_with('x') || arg.starts_with('w') || arg.starts_with('d') || arg.starts_with('s') || *arg == "sp" {
+            } else if self.labels.contains_key(arg) {
+                operands.push(Operand::Label(self.labels[arg]));
+            } else if arg.starts_with('x') || arg.starts_with('w') || arg.starts_with('d') || arg.starts_with('s') || arg == "sp" {
                 operands.push(Operand::Reg(self.parse_reg(arg)?));
             } else if let Ok(imm) = self.parse_imm(arg) {
                 // For things like `svc #0x80` where the '#' is optional in some assemblers
                 operands.push(Operand::Imm(imm));
             } else {
-                // Assume it's a label for a syscall
-                operands.push(Operand::Reg(usize::MAX)); // Placeholder
+                // Symbolic operand (e.g. BL _printf)
+                let name_id = self.intern_label_name(arg);
+                operands.push(Operand::LabelName(name_id));
             }
         }
 
         let opcode = match mnemonic {
             "add" => {
-                // Handle `add x0, x0, .L0@PAGEOFF` case from ADRP
-                if args[2].contains("@PAGEOFF") {
-                    let dest = self.parse_reg(args[0])?;
-                    let base = self.parse_reg(args[1])?;
+                // Handle `add x0, x0, .L0@PAGEOFF` from ADRP lowering.
+                if args.len() >= 3 && args[2].contains("@PAGEOFF") {
+                    let dest = self.parse_reg(&args[0])?;
+                    let base = self.parse_reg(&args[1])?;
                     let label_part = args[2].split('@').next().unwrap();
-                    let label_addr = *self.labels.get(label_part).ok_or_else(|| format!("Label not found: {}", label_part))?;
-                    operands = vec![Operand::Reg(dest), Operand::Reg(base), Operand::Imm(label_addr as i64)];
+                    let label_addr = *self
+                        .labels
+                        .get(label_part)
+                        .ok_or_else(|| format!("Label not found: {}", label_part))?;
+                    operands = vec![
+                        Operand::Reg(dest),
+                        Operand::Reg(base),
+                        Operand::Imm((label_addr as i64) & 0xfff),
+                    ];
                 }
                 OpCode::ADD
             }
             "sub" => OpCode::SUB, "mul" => OpCode::MUL, "sdiv" => OpCode::SDIV, "udiv" => OpCode::UDIV,
+            "mod" => OpCode::MOD,
             "msub" => OpCode::MSUB, "neg" => OpCode::NEG, "uxtw" => OpCode::UXTW,
             "fadd" => OpCode::FADD, "fsub" => OpCode::FSUB, "fmul" => OpCode::FMUL, "fdiv" => OpCode::FDIV,
             "fmov" => OpCode::FMOV,
@@ -635,23 +916,53 @@ impl VM {
             "strb" => OpCode::STRB, "stp" => OpCode::STP, "ldp" => OpCode::LDP,
             "b" => OpCode::B, "bl" => OpCode::BL, "ret" => OpCode::RET,
             "cmp" => OpCode::CMP,
-            "cset" => OpCode::CSET,
-            "b.eq" => OpCode::B_COND(Condition::EQ), "b.ne" => OpCode::B_COND(Condition::NE),
-            "b.lt" => OpCode::B_COND(Condition::LT), "b.gt" => OpCode::B_COND(Condition::GT),
-            "b.le" => OpCode::B_COND(Condition::LE), "b.ge" => OpCode::B_COND(Condition::GE),
-            "b.hi" => OpCode::B_COND(Condition::HI), "b.ls" => OpCode::B_COND(Condition::LS),
-            "b.hs" | "b.cs" => OpCode::B_COND(Condition::HS),
-            "b.lo" | "b.cc" => OpCode::B_COND(Condition::LO),
-            "b.mi" => OpCode::B_COND(Condition::MI), "b.pl" => OpCode::B_COND(Condition::PL),
-            "b.vs" => OpCode::B_COND(Condition::VS), "b.vc" => OpCode::B_COND(Condition::VC),
+            "cset" => {
+                if args.len() != 2 {
+                    return Err("cset expects 2 operands: cset <reg>, <cond>".to_string());
+                }
+                let dest = self.parse_reg(&args[0])?;
+                let cond = self.parse_condition_token(&args[1])?;
+                operands = vec![
+                    Operand::Reg(dest),
+                    Operand::Imm(Self::condition_to_code(cond)),
+                ];
+                OpCode::CSET
+            }
+            "b.eq" => OpCode::BCond(Condition::EQ), "b.ne" => OpCode::BCond(Condition::NE),
+            "b.lt" => OpCode::BCond(Condition::LT), "b.gt" => OpCode::BCond(Condition::GT),
+            "b.le" => OpCode::BCond(Condition::LE), "b.ge" => OpCode::BCond(Condition::GE),
+            "b.hi" => OpCode::BCond(Condition::HI), "b.ls" => OpCode::BCond(Condition::LS),
+            "b.hs" | "b.cs" => OpCode::BCond(Condition::HS),
+            "b.lo" | "b.cc" => OpCode::BCond(Condition::LO),
+            "b.mi" => OpCode::BCond(Condition::MI), "b.pl" => OpCode::BCond(Condition::PL),
+            "b.vs" => OpCode::BCond(Condition::VS), "b.vc" => OpCode::BCond(Condition::VC),
             "cbz" => OpCode::CBZ, "cbnz" => OpCode::CBNZ,
-            "adrp" => OpCode::ADRP, // This is now a pseudo-op
+            "adrp" => {
+                if args.len() >= 2 && args[1].contains("@PAGE") {
+                    let dest = self.parse_reg(&args[0])?;
+                    let label_part = args[1].split('@').next().unwrap();
+                    let label_addr = *self
+                        .labels
+                        .get(label_part)
+                        .ok_or_else(|| format!("Label not found: {}", label_part))?;
+                    operands = vec![Operand::Reg(dest), Operand::Imm(label_addr as i64)];
+                }
+                OpCode::ADRP
+            }
             "svc" => OpCode::SVC,
             "nop" => OpCode::NOP,
             _ => return Err(format!("Unknown instruction: {}", mnemonic)),
         };
 
         Ok(Instruction { opcode, operands })
+    }
+
+    pub fn append_instruction(&mut self, line: &str) -> Result<usize, String> {
+        let instr = self.parse_instruction(line)?;
+        let pc = self.program.len();
+        self.program.push(instr);
+        self.debug_info.insert(pc, line.to_string());
+        Ok(pc)
     }
 }
 
@@ -688,12 +999,46 @@ fn write_data_directive(vm: &mut VM, line: &str, data_ptr: &mut usize) -> Result
         vm.memory[*data_ptr + bytes.len()] = 0;
         *data_ptr += bytes.len() + 1;
         Ok(())
+    } else if line.starts_with(".ascii") {
+        let raw = line.split('"').nth(1).unwrap_or("");
+        let s = unescape_asciz(raw);
+        let bytes = s.as_bytes();
+        if *data_ptr + bytes.len() > vm.memory.len() { return Err("Data segment write out of bounds".to_string()); }
+        vm.memory[*data_ptr..*data_ptr + bytes.len()].copy_from_slice(bytes);
+        *data_ptr += bytes.len();
+        Ok(())
     } else if line.starts_with(".quad") {
         let val_str = line.split_whitespace().nth(1).unwrap_or("0");
         let val = vm.parse_imm(val_str)?;
         if *data_ptr + 8 > vm.memory.len() { return Err("Data segment write out of bounds".to_string()); }
         vm.memory[*data_ptr..*data_ptr + 8].copy_from_slice(&val.to_le_bytes());
         *data_ptr += 8;
+        Ok(())
+    } else if line.starts_with(".word") {
+        let val_str = line.split_whitespace().nth(1).unwrap_or("0");
+        let val = vm.parse_imm(val_str)? as i32;
+        if *data_ptr + 4 > vm.memory.len() { return Err("Data segment write out of bounds".to_string()); }
+        vm.memory[*data_ptr..*data_ptr + 4].copy_from_slice(&val.to_le_bytes());
+        *data_ptr += 4;
+        Ok(())
+    } else if line.starts_with(".byte") {
+        let val_str = line.split_whitespace().nth(1).unwrap_or("0");
+        let val = vm.parse_imm(val_str)? as i16;
+        if !(0..=255).contains(&val) {
+            return Err(format!(".byte out of range: {}", val));
+        }
+        if *data_ptr + 1 > vm.memory.len() { return Err("Data segment write out of bounds".to_string()); }
+        vm.memory[*data_ptr] = val as u8;
+        *data_ptr += 1;
+        Ok(())
+    } else if line.starts_with(".space") {
+        let size_str = line.split_whitespace().nth(1).unwrap_or("0");
+        let size = vm.parse_imm(size_str)?.max(0) as usize;
+        if *data_ptr + size > vm.memory.len() { return Err("Data segment write out of bounds".to_string()); }
+        for b in &mut vm.memory[*data_ptr..*data_ptr + size] {
+            *b = 0;
+        }
+        *data_ptr += size;
         Ok(())
     } else {
         Ok(())
@@ -761,5 +1106,106 @@ _main:
         vm.load_program(asm).unwrap();
         vm.run().unwrap();
         assert_eq!(vm.get_reg(2), 42);
+    }
+
+    #[test]
+    fn test_mod_and_data_directives() {
+        let asm = r#"
+.data
+b: .byte 7
+w: .word 1024
+pad: .space 3
+q: .quad 99
+.text
+_main:
+    mov x0, #43
+    mov x1, #10
+    mod x2, x0, x1
+    ret
+"#;
+        let mut vm = VM::new();
+        vm.load_program(asm).unwrap();
+        let b = *vm.labels.get("b").unwrap();
+        let w = *vm.labels.get("w").unwrap();
+        let pad = *vm.labels.get("pad").unwrap();
+        let q = *vm.labels.get("q").unwrap();
+        assert_eq!(vm.memory[b], 7);
+        assert_eq!(
+            i32::from_le_bytes(vm.memory[w..w + 4].try_into().unwrap()),
+            1024
+        );
+        assert_eq!(&vm.memory[pad..pad + 3], &[0, 0, 0]);
+        assert_eq!(
+            i64::from_le_bytes(vm.memory[q..q + 8].try_into().unwrap()),
+            99
+        );
+
+        vm.run().unwrap();
+        assert_eq!(vm.get_reg(2), 3);
+    }
+
+    #[test]
+    fn test_memory_out_of_bounds_is_error() {
+        let asm = r#"
+.text
+_main:
+    mov x0, #1
+    mov x1, #2097152
+    str x0, [x1]
+    ret
+"#;
+        let mut vm = VM::new();
+        vm.load_program(asm).unwrap();
+        let err = vm.run().unwrap_err();
+        assert!(err.contains("Memory access out of bounds"));
+    }
+
+    #[test]
+    fn test_vm_malloc_reuses_freed_block() {
+        let mut vm = VM::new();
+        let p1 = vm.vm_malloc(24).unwrap();
+        let p2 = vm.vm_malloc(24).unwrap();
+        assert!(p2 > p1);
+        vm.vm_free(p1);
+        let p3 = vm.vm_malloc(16).unwrap();
+        assert_eq!(p3, p1);
+    }
+
+    #[test]
+    fn test_ascii_directive_no_null_terminator() {
+        let asm = r#"
+.data
+msg: .ascii "abc"
+tail: .byte 1
+.text
+_main:
+    ret
+"#;
+        let mut vm = VM::new();
+        vm.load_program(asm).unwrap();
+        let msg = *vm.labels.get("msg").unwrap();
+        let tail = *vm.labels.get("tail").unwrap();
+        assert_eq!(&vm.memory[msg..msg + 3], b"abc");
+        assert_eq!(tail - msg, 3);
+        assert_eq!(vm.memory[tail], 1);
+    }
+
+    #[test]
+    fn test_cset_condition_execution() {
+        let asm = r#"
+.text
+_main:
+    mov x0, #5
+    mov x1, #7
+    cmp x0, x1
+    cset x2, lt
+    cset x3, gt
+    ret
+"#;
+        let mut vm = VM::new();
+        vm.load_program(asm).unwrap();
+        vm.run().unwrap();
+        assert_eq!(vm.get_reg(2), 1);
+        assert_eq!(vm.get_reg(3), 0);
     }
 }

@@ -1,6 +1,7 @@
 //! Phase 3: The "Hello Integer" Trampoline
 //!
 //! Builds a tiny function in JIT memory, then calls it from Rust.
+#![allow(dead_code)]
 
 use std::io;
 

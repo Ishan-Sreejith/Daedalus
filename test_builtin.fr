@@ -1,0 +1,2 @@
+var result: sqrt(16)
+say: result

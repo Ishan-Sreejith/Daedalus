@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WASM Test</title>
+</head>
+<body>
+    <h1>Testing WebAssembly Module</h1>
+    <div id="output"></div>
+    <button onclick="testWasm()">Test WASM</button>
+
+    <script type="module">
+        async function testWasm() {
+            try {
+                console.log('Loading WASM...');
+                const init = await import('./pkg/core_wasm.js');
+                console.log('Module imported');
+
+                await init.default();
+                console.log('WASM initialized');
+
+                const { CoreCompilerWasm } = await import('./pkg/core_wasm.js');
+                const compiler = new CoreCompilerWasm();
+                console.log('Compiler created');
+
+                // Test basic functionality
+                compiler.save_file('test.fr', 'say: "Hello WebAssembly!"');
+                const result = compiler.execute('test.fr');
+
+                document.getElementById('output').innerHTML = `
+                    <h2>✅ Success!</h2>
+                    <p>WASM module loaded and executed successfully</p>
+                    <pre>${result}</pre>
+                `;
+
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('output').innerHTML = `
+                    <h2>❌ Error</h2>
+                    <p>Failed to load WASM: ${error.message}</p>
+                    <pre>${error.stack}</pre>
+                `;
+            }
+        }
+
+        window.testWasm = testWasm;
+    </script>
+</body>
+</html>

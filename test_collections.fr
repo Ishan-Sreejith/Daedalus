@@ -1,4 +1,4 @@
-var myMap: {"name": "John", "age": 30}
-var myList: [1, 2, 3, 4, 5]
-say: myMap
-say: myList
+var numbers: [10, 20, 30]
+var text_map: {"greeting": "hello", "count": 42}
+say: numbers
+say: text_map

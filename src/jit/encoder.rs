@@ -17,6 +17,7 @@
 //! - W0-W30 are 32-bit versions of X0-X30.
 //! - WZR (Zero Register 32-bit) is W31.
 //! - XZR (Zero Register 64-bit) is X31.
+#![allow(dead_code)]
 
 /// Represents an ARM64 register.
 /// 0-30 for X0-X30, 31 for SP/XZR.

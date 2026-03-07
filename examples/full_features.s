@@ -750,7 +750,7 @@ L3:
     add sp, sp, #400
     ldp x29, x30, [sp], #16
     ret
-_user_mul_fast:
+_user_add_global:
     stp x29, x30, [sp, #-16]!
     mov x29, sp
     sub sp, sp, #32
@@ -762,7 +762,7 @@ _user_mul_fast:
     str x1, [sp, #8]
     ldr x0, [sp, #0]
     ldr x1, [sp, #8]
-    mul x0, x0, x1
+    add x0, x0, x1
     str x0, [sp, #16]
     ldr x0, [sp, #16]
     bl _inc_rc
@@ -781,7 +781,7 @@ _user_mul_fast:
     add sp, sp, #32
     ldp x29, x30, [sp], #16
     ret
-_user_add_local:
+_user_mul_fast:
     stp x29, x30, [sp, #-16]!
     mov x29, sp
     sub sp, sp, #32
@@ -793,7 +793,7 @@ _user_add_local:
     str x1, [sp, #8]
     ldr x0, [sp, #0]
     ldr x1, [sp, #8]
-    add x0, x0, x1
+    mul x0, x0, x1
     str x0, [sp, #16]
     ldr x0, [sp, #16]
     bl _inc_rc
@@ -812,7 +812,7 @@ _user_add_local:
     add sp, sp, #32
     ldp x29, x30, [sp], #16
     ret
-_user_add_global:
+_user_add_local:
     stp x29, x30, [sp, #-16]!
     mov x29, sp
     sub sp, sp, #32

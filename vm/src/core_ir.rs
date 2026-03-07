@@ -35,10 +35,45 @@ enum Operand {
 
 #[derive(Clone, Copy, Debug)]
 enum Builtin {
+    // Collection functions
     Len,
     Keys,
     Values,
     Range,
+    Push,
+    Pop,
+    Sort,
+    Filter,
+    Map,
+
+    // Math functions
+    Abs,
+    Min,
+    Max,
+    Pow,
+    Sqrt,
+    Floor,
+    Ceil,
+    Round,
+
+    // String functions
+    Split,
+    Join,
+    Substring,
+    ToUpper,
+    ToLower,
+    Trim,
+    Contains,
+
+    // Type conversion
+    Str,
+    Num,
+    Bool,
+    Type,
+
+    // I/O functions
+    Print,
+    Println,
 }
 
 #[derive(Clone, Debug)]
@@ -482,6 +517,7 @@ fn display_value(v: &Value, depth: usize) -> String {
 
 fn exec_builtin(b: Builtin, args: &[Value]) -> Result<Value, String> {
     match b {
+        // Collection functions
         Builtin::Len => {
             if args.len() != 1 {
                 return Err("len expects 1 arg".to_string());
@@ -533,6 +569,259 @@ fn exec_builtin(b: Builtin, args: &[Value]) -> Result<Value, String> {
                 i += 1;
             }
             Ok(Value::List(Rc::new(RefCell::new(out))))
+        }
+        Builtin::Push => {
+            if args.len() != 2 {
+                return Err("push expects 2 args".to_string());
+            }
+            let Value::List(l) = &args[0] else {
+                return Err("push expects list as first argument".to_string());
+            };
+            l.borrow_mut().push(args[1].clone());
+            Ok(Value::Number(l.borrow().len() as f64))
+        }
+        Builtin::Pop => {
+            if args.len() != 1 {
+                return Err("pop expects 1 arg".to_string());
+            }
+            let Value::List(l) = &args[0] else {
+                return Err("pop expects list".to_string());
+            };
+            Ok(l.borrow_mut().pop().unwrap_or(Value::Null))
+        }
+        Builtin::Sort => {
+            if args.len() != 1 {
+                return Err("sort expects 1 arg".to_string());
+            }
+            let Value::List(l) = &args[0] else {
+                return Err("sort expects list".to_string());
+            };
+            let mut items = l.borrow().clone();
+            items.sort_by(|a, b| display_value(a, 0).cmp(&display_value(b, 0)));
+            Ok(Value::List(Rc::new(RefCell::new(items))))
+        }
+
+        // Math functions
+        Builtin::Abs => {
+            if args.len() != 1 {
+                return Err("abs expects 1 arg".to_string());
+            }
+            let n = number(args[0].clone())?;
+            Ok(Value::Number(n.abs()))
+        }
+        Builtin::Min => {
+            if args.len() != 2 {
+                return Err("min expects 2 args".to_string());
+            }
+            let a = number(args[0].clone())?;
+            let b = number(args[1].clone())?;
+            Ok(Value::Number(a.min(b)))
+        }
+        Builtin::Max => {
+            if args.len() != 2 {
+                return Err("max expects 2 args".to_string());
+            }
+            let a = number(args[0].clone())?;
+            let b = number(args[1].clone())?;
+            Ok(Value::Number(a.max(b)))
+        }
+        Builtin::Pow => {
+            if args.len() != 2 {
+                return Err("pow expects 2 args".to_string());
+            }
+            let base = number(args[0].clone())?;
+            let exp = number(args[1].clone())?;
+            Ok(Value::Number(base.powf(exp)))
+        }
+        Builtin::Sqrt => {
+            if args.len() != 1 {
+                return Err("sqrt expects 1 arg".to_string());
+            }
+            let n = number(args[0].clone())?;
+            Ok(Value::Number(n.sqrt()))
+        }
+        Builtin::Floor => {
+            if args.len() != 1 {
+                return Err("floor expects 1 arg".to_string());
+            }
+            let n = number(args[0].clone())?;
+            Ok(Value::Number(n.floor()))
+        }
+        Builtin::Ceil => {
+            if args.len() != 1 {
+                return Err("ceil expects 1 arg".to_string());
+            }
+            let n = number(args[0].clone())?;
+            Ok(Value::Number(n.ceil()))
+        }
+        Builtin::Round => {
+            if args.len() != 1 {
+                return Err("round expects 1 arg".to_string());
+            }
+            let n = number(args[0].clone())?;
+            Ok(Value::Number(n.round()))
+        }
+
+        // String functions
+        Builtin::Split => {
+            if args.len() != 2 {
+                return Err("split expects 2 args".to_string());
+            }
+            let Value::String(s) = &args[0] else {
+                return Err("split expects string as first argument".to_string());
+            };
+            let Value::String(delim) = &args[1] else {
+                return Err("split expects string as second argument".to_string());
+            };
+            let parts: Vec<Value> = s.split(delim.as_str())
+                .map(|part| Value::String(Rc::new(part.to_string())))
+                .collect();
+            Ok(Value::List(Rc::new(RefCell::new(parts))))
+        }
+        Builtin::Join => {
+            if args.len() != 2 {
+                return Err("join expects 2 args".to_string());
+            }
+            let Value::List(l) = &args[0] else {
+                return Err("join expects list as first argument".to_string());
+            };
+            let Value::String(delim) = &args[1] else {
+                return Err("join expects string as second argument".to_string());
+            };
+            let parts: Vec<String> = l.borrow()
+                .iter()
+                .map(|v| display_value(v, 0))
+                .collect();
+            Ok(Value::String(Rc::new(parts.join(delim.as_str()))))
+        }
+        Builtin::Substring => {
+            if args.len() != 3 {
+                return Err("substring expects 3 args (string, start, length)".to_string());
+            }
+            let Value::String(s) = &args[0] else {
+                return Err("substring expects string as first argument".to_string());
+            };
+            let start = number(args[1].clone())? as usize;
+            let length = number(args[2].clone())? as usize;
+            let chars: Vec<char> = s.chars().collect();
+            if start >= chars.len() {
+                return Ok(Value::String(Rc::new("".to_string())));
+            }
+            let end = std::cmp::min(start + length, chars.len());
+            let substr: String = chars[start..end].iter().collect();
+            Ok(Value::String(Rc::new(substr)))
+        }
+        Builtin::ToUpper => {
+            if args.len() != 1 {
+                return Err("toupper expects 1 arg".to_string());
+            }
+            let Value::String(s) = &args[0] else {
+                return Err("toupper expects string".to_string());
+            };
+            Ok(Value::String(Rc::new(s.to_uppercase())))
+        }
+        Builtin::ToLower => {
+            if args.len() != 1 {
+                return Err("tolower expects 1 arg".to_string());
+            }
+            let Value::String(s) = &args[0] else {
+                return Err("tolower expects string".to_string());
+            };
+            Ok(Value::String(Rc::new(s.to_lowercase())))
+        }
+        Builtin::Trim => {
+            if args.len() != 1 {
+                return Err("trim expects 1 arg".to_string());
+            }
+            let Value::String(s) = &args[0] else {
+                return Err("trim expects string".to_string());
+            };
+            Ok(Value::String(Rc::new(s.trim().to_string())))
+        }
+        Builtin::Contains => {
+            if args.len() != 2 {
+                return Err("contains expects 2 args".to_string());
+            }
+            let Value::String(s) = &args[0] else {
+                return Err("contains expects string as first argument".to_string());
+            };
+            let Value::String(needle) = &args[1] else {
+                return Err("contains expects string as second argument".to_string());
+            };
+            Ok(Value::Bool(s.contains(needle.as_str())))
+        }
+
+        // Type conversion
+        Builtin::Str => {
+            if args.len() != 1 {
+                return Err("str expects 1 arg".to_string());
+            }
+            Ok(Value::String(Rc::new(display_value(&args[0], 0))))
+        }
+        Builtin::Num => {
+            if args.len() != 1 {
+                return Err("num expects 1 arg".to_string());
+            }
+            match &args[0] {
+                Value::Number(n) => Ok(Value::Number(*n)),
+                Value::Bool(b) => Ok(Value::Number(if *b { 1.0 } else { 0.0 })),
+                Value::String(s) => {
+                    let parsed = s.trim()
+                        .parse::<f64>()
+                        .map_err(|_| format!("num() could not parse '{}'", s))?;
+                    Ok(Value::Number(parsed))
+                }
+                _ => Err("num() expects number, bool, or string".to_string()),
+            }
+        }
+        Builtin::Bool => {
+            if args.len() != 1 {
+                return Err("bool expects 1 arg".to_string());
+            }
+            let b = match &args[0] {
+                Value::Bool(b) => *b,
+                Value::Number(n) => *n != 0.0,
+                Value::String(s) => !s.is_empty(),
+                Value::List(l) => !l.borrow().is_empty(),
+                Value::Map(m) => !m.borrow().is_empty(),
+                Value::Null => false,
+            };
+            Ok(Value::Bool(b))
+        }
+        Builtin::Type => {
+            if args.len() != 1 {
+                return Err("type expects 1 arg".to_string());
+            }
+            let t = match &args[0] {
+                Value::Number(_) => "number",
+                Value::String(_) => "string",
+                Value::Bool(_) => "bool",
+                Value::List(_) => "list",
+                Value::Map(_) => "map",
+                Value::Null => "null",
+            };
+            Ok(Value::String(Rc::new(t.to_string())))
+        }
+
+        // I/O functions
+        Builtin::Print => {
+            if args.len() != 1 {
+                return Err("print expects 1 arg".to_string());
+            }
+            print!("{}", display_value(&args[0], 0));
+            Ok(Value::Null)
+        }
+        Builtin::Println => {
+            if args.len() != 1 {
+                return Err("println expects 1 arg".to_string());
+            }
+            println!("{}", display_value(&args[0], 0));
+            Ok(Value::Null)
+        }
+
+        // Add Filter and Map later - they need function support
+        Builtin::Filter | Builtin::Map => {
+            Err("filter and map functions not yet implemented".to_string())
         }
     }
 }
@@ -983,10 +1272,46 @@ fn compile(funcs: Vec<FnSrc>) -> Result<Program, String> {
                     };
                     let name = parts[2].clone();
                     let callee = match name.as_str() {
+                        // Collection functions
                         "len" => Callee::Builtin(Builtin::Len),
                         "keys" => Callee::Builtin(Builtin::Keys),
                         "values" => Callee::Builtin(Builtin::Values),
                         "range" => Callee::Builtin(Builtin::Range),
+                        "push" => Callee::Builtin(Builtin::Push),
+                        "pop" => Callee::Builtin(Builtin::Pop),
+                        "sort" => Callee::Builtin(Builtin::Sort),
+                        "filter" => Callee::Builtin(Builtin::Filter),
+                        "map" => Callee::Builtin(Builtin::Map),
+
+                        // Math functions
+                        "abs" => Callee::Builtin(Builtin::Abs),
+                        "min" => Callee::Builtin(Builtin::Min),
+                        "max" => Callee::Builtin(Builtin::Max),
+                        "pow" => Callee::Builtin(Builtin::Pow),
+                        "sqrt" => Callee::Builtin(Builtin::Sqrt),
+                        "floor" => Callee::Builtin(Builtin::Floor),
+                        "ceil" => Callee::Builtin(Builtin::Ceil),
+                        "round" => Callee::Builtin(Builtin::Round),
+
+                        // String functions
+                        "split" => Callee::Builtin(Builtin::Split),
+                        "join" => Callee::Builtin(Builtin::Join),
+                        "substring" => Callee::Builtin(Builtin::Substring),
+                        "toupper" => Callee::Builtin(Builtin::ToUpper),
+                        "tolower" => Callee::Builtin(Builtin::ToLower),
+                        "trim" => Callee::Builtin(Builtin::Trim),
+                        "contains" => Callee::Builtin(Builtin::Contains),
+
+                        // Type conversion
+                        "str" => Callee::Builtin(Builtin::Str),
+                        "num" => Callee::Builtin(Builtin::Num),
+                        "bool" => Callee::Builtin(Builtin::Bool),
+                        "type" => Callee::Builtin(Builtin::Type),
+
+                        // I/O functions
+                        "print" => Callee::Builtin(Builtin::Print),
+                        "println" => Callee::Builtin(Builtin::Println),
+
                         _ => {
                             let idx = *program
                                 .func_index

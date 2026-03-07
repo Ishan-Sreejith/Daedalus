@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CoRe Language - WebAssembly IDE</title>
+    <style>
+        body { font-family: monospace; margin: 0; background: #2c3e50; color: white; }
+        .container { display: flex; height: 100vh; }
+        .sidebar { width: 250px; background: #34495e; padding: 20px; overflow-y: auto; }
+        .main { flex: 1; display: flex; flex-direction: column; }
+        .editor { flex: 1; padding: 20px; }
+        .terminal { height: 200px; background: #1a1a1a; color: #00ff00; padding: 15px; overflow-y: auto; }
+        textarea { width: 100%; height: 300px; background: #1e1e1e; color: #f8f8f2; border: none; padding: 10px; font-family: monospace; }
+        button { background: #3498db; color: white; border: none; padding: 8px 16px; margin: 5px; cursor: pointer; border-radius: 3px; }
+        button:hover { background: #2980b9; }
+        .file-item { background: #2c3e50; padding: 8px; margin: 5px 0; border-radius: 3px; cursor: pointer; }
+        .file-item:hover { background: #3498db; }
+        .file-item.active { background: #27ae60; }
+        input { background: #2c3e50; color: white; border: 1px solid #34495e; padding: 8px; margin: 5px 0; width: 100%; }
+        .terminal-line { margin: 2px 0; }
+        .output { background: #1e1e1e; padding: 10px; margin: 10px 0; border-radius: 3px; white-space: pre-wrap; }
+        h3 { color: #3498db; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h3>📁 Files</h3>
+            <input type="text" id="fileInput" placeholder="filename.fr">
+            <button onclick="createFile()">Create File</button>
+            <div id="fileList"></div>
+
+            <h3>📚 Examples</h3>
+            <div class="file-item" onclick="loadExample('hello')">Hello World</div>
+            <div class="file-item" onclick="loadExample('variables')">Variables</div>
+        </div>
+
+        <div class="main">
+            <div class="editor">
+                <div id="loadingIndicator" style="background: #e74c3c; color: white; padding: 10px; margin-bottom: 10px; border-radius: 3px;">
+                    🔄 Loading WebAssembly module...
+                </div>
+                <h3>✏️ Editor - <span id="currentFile">No file</span></h3>
+                <button onclick="runCode()">▶️ Run</button>
+                <button onclick="saveFile()">💾 Save</button>
+                <textarea id="codeEditor" placeholder="Write CoRe code here...
+
+Example:
+say: &quot;Hello, World!&quot;
+
+var name: &quot;CoRe&quot;
+say: &quot;Welcome to &quot; + name + &quot; Language&quot;
+
+fn greet: user {
+    say: &quot;Hello, &quot; + user + &quot;!&quot;
+}
+
+greet: &quot;Developer&quot;"></textarea>
+                <div id="output" class="output">Click 'Run' to execute your CoRe code. Output will appear here.</div>
+            </div>
+
+            <div class="terminal" id="terminal">
+                <div class="terminal-line">CoRe Language Terminal - Type 'help' for commands</div>
+                <input type="text" id="terminalInput" onkeypress="if(event.key==='Enter') executeCommand()"
+                       placeholder="Type command..." style="width: calc(100% - 10px); margin-top: 10px;">
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        let compiler, currentFileName = null;
+
+        // Add error handling and debugging
+        window.onerror = function(msg, url, line) {
+            console.error('JavaScript Error:', msg, 'at', url, ':', line);
+            alert('JavaScript Error: ' + msg);
+        };
+
+        async function initCompiler() {
+            try {
+                const loadingIndicator = document.getElementById('loadingIndicator');
+                loadingIndicator.innerHTML = '🔄 Loading WebAssembly module...';
+
+                console.log('Loading WASM module...');
+                const init = await import('./pkg/core_wasm.js');
+                console.log('WASM module imported:', init);
+
+                loadingIndicator.innerHTML = '🔄 Initializing WASM...';
+                await init.default();
+                console.log('WASM initialized');
+
+                loadingIndicator.innerHTML = '🔄 Creating compiler instance...';
+                const { CoreCompilerWasm } = await import('./pkg/core_wasm.js');
+                compiler = new CoreCompilerWasm();
+                console.log('CoreCompilerWasm created:', compiler);
+
+                // Test the compiler
+                compiler.save_file('test.fr', 'say: "Test"');
+                console.log('Test file saved');
+
+                loadExample('hello');
+
+                // Hide loading indicator and show success
+                loadingIndicator.style.background = '#27ae60';
+                loadingIndicator.innerHTML = '✅ CoRe WebAssembly compiler loaded successfully!';
+                setTimeout(() => {
+                    loadingIndicator.style.display = 'none';
+                }, 3000);
+
+                // Update terminal
+                document.getElementById('terminal').innerHTML +=
+                    '<div class="terminal-line" style="color: #00ff00;">✓ CoRe WebAssembly compiler loaded successfully!</div>' +
+                    '<div class="terminal-line">Type "help" for available commands</div>';
+
+            } catch (error) {
+                console.error('Failed to initialize WASM:', error);
+                const loadingIndicator = document.getElementById('loadingIndicator');
+                loadingIndicator.style.background = '#e74c3c';
+                loadingIndicator.innerHTML = '❌ Failed to load WebAssembly: ' + error.message;
+
+                document.getElementById('output').textContent = 'Error loading WebAssembly: ' + error.message + '\n\nCheck browser console for details.';
+                document.getElementById('terminal').innerHTML +=
+                    '<div class="terminal-line" style="color: red;">✗ Failed to load WASM: ' + error.message + '</div>';
+            }
+        }
+
+        window.createFile = () => {
+            try {
+                if (!compiler) {
+                    alert('Compiler not loaded yet. Please wait.');
+                    return;
+                }
+                const name = document.getElementById('fileInput').value.trim();
+                if (!name) {
+                    alert('Please enter a filename');
+                    return;
+                }
+                if (!name.endsWith('.fr')) {
+                    alert('File must end with .fr');
+                    return;
+                }
+
+                const defaultCode = `// New file: ${name}
+say: "Hello from ${name}!"
+
+var message: "Welcome to CoRe Language"
+say: message`;
+
+                compiler.save_file(name, defaultCode);
+                refreshFileList();
+                openFile(name);
+                document.getElementById('fileInput').value = '';
+                console.log('File created:', name);
+            } catch (error) {
+                console.error('Error creating file:', error);
+                alert('Error creating file: ' + error.message);
+            }
+        };
+
+        window.openFile = (name) => {
+            try {
+                if (!compiler) {
+                    alert('Compiler not loaded yet');
+                    return;
+                }
+                currentFileName = name;
+                document.getElementById('currentFile').textContent = name;
+                document.getElementById('codeEditor').value = compiler.get_file_content(name);
+
+                // Update active file highlighting
+                document.querySelectorAll('.file-item').forEach(item => item.classList.remove('active'));
+                // Find the clicked element and highlight it
+                const fileItems = document.querySelectorAll('.file-item');
+                fileItems.forEach(item => {
+                    if (item.textContent.includes(name)) {
+                        item.classList.add('active');
+                    }
+                });
+
+                console.log('File opened:', name);
+            } catch (error) {
+                console.error('Error opening file:', error);
+                alert('Error opening file: ' + error.message);
+            }
+        };
+
+        window.saveFile = () => {
+            try {
+                if (!compiler) {
+                    alert('Compiler not loaded yet');
+                    return;
+                }
+                if (!currentFileName) {
+                    alert('No file open');
+                    return;
+                }
+                const content = document.getElementById('codeEditor').value;
+                compiler.save_file(currentFileName, content);
+                console.log('File saved:', currentFileName);
+
+                // Visual feedback
+                const saveButton = event.target;
+                const originalText = saveButton.textContent;
+                saveButton.textContent = '✓ Saved';
+                saveButton.style.background = '#27ae60';
+                setTimeout(() => {
+                    saveButton.textContent = originalText;
+                    saveButton.style.background = '#3498db';
+                }, 1000);
+
+            } catch (error) {
+                console.error('Error saving file:', error);
+                alert('Error saving file: ' + error.message);
+            }
+        };
+
+        window.runCode = () => {
+            try {
+                if (!compiler) {
+                    alert('Compiler not loaded yet');
+                    return;
+                }
+                if (!currentFileName) {
+                    alert('No file open');
+                    return;
+                }
+
+                // Save before running
+                saveFile();
+
+                console.log('Executing file:', currentFileName);
+                const output = compiler.execute(currentFileName);
+                console.log('Execution output:', output);
+
+                document.getElementById('output').textContent = output;
+
+                // Visual feedback
+                const runButton = event.target;
+                const originalText = runButton.textContent;
+                runButton.textContent = '✓ Executed';
+                runButton.style.background = '#27ae60';
+                setTimeout(() => {
+                    runButton.textContent = originalText;
+                    runButton.style.background = '#3498db';
+                }, 1000);
+
+            } catch (error) {
+                console.error('Error running code:', error);
+                document.getElementById('output').textContent = 'Error: ' + error.message;
+            }
+        };
+
+        window.loadExample = (type) => {
+            try {
+                if (!compiler) {
+                    console.log('Compiler not ready, will load example when ready');
+                    return;
+                }
+
+                const examples = {
+                    hello: {
+                        name: 'hello.fr',
+                        code: `say: "Hello, CoRe Language!"
+say: "Running in WebAssembly!"
+
+var name: "World"
+say: "Hello, " + name + "!"
+
+var x: 42
+var y: 8
+say: "Math result: " + (x + y)`
+                    },
+                    variables: {
+                        name: 'variables.fr',
+                        code: `var x: 10
+var y: 20
+var sum: x + y
+say: "Sum: " + sum
+
+var text: "CoRe"
+say: "Language: " + text
+
+fn greet: name {
+    say: "Hello, " + name + "!"
+}
+
+greet: "Developer"`
+                    }
+                };
+
+                const ex = examples[type];
+                if (ex) {
+                    compiler.save_file(ex.name, ex.code);
+                    refreshFileList();
+                    openFile(ex.name);
+                    console.log('Example loaded:', type);
+                }
+            } catch (error) {
+                console.error('Error loading example:', error);
+            }
+        };
+
+        window.refreshFileList = () => {
+            try {
+                if (!compiler) return;
+
+                const filesJson = compiler.get_files_json();
+                console.log('Files JSON:', filesJson);
+
+                const files = JSON.parse(filesJson);
+                const list = document.getElementById('fileList');
+                list.innerHTML = files.map(f =>
+                    `<div class="file-item" onclick="openFile('${f}')">📄 ${f}</div>`
+                ).join('');
+
+                console.log('File list refreshed:', files);
+            } catch (error) {
+                console.error('Error refreshing file list:', error);
+            }
+        };
+
+        window.executeCommand = () => {
+            try {
+                if (!compiler) {
+                    alert('Compiler not loaded yet');
+                    return;
+                }
+
+                const input = document.getElementById('terminalInput');
+                const command = input.value.trim();
+                if (!command) return;
+
+                const terminal = document.getElementById('terminal');
+                terminal.innerHTML += `<div class="terminal-line">$ ${command}</div>`;
+
+                console.log('Executing command:', command);
+                const output = compiler.execute_command(command);
+                console.log('Command output:', output);
+
+                if (output === 'CLEAR_TERMINAL') {
+                    terminal.innerHTML = '<div class="terminal-line">CoRe Language Terminal - Type \'help\' for commands</div>';
+                } else if (output) {
+                    const lines = output.split('\n');
+                    lines.forEach(line => {
+                        if (line.trim()) {
+                            terminal.innerHTML += `<div class="terminal-line">${line}</div>`;
+                        }
+                    });
+                }
+
+                input.value = '';
+                terminal.scrollTop = terminal.scrollHeight;
+
+                // Refresh file list if it was a file operation
+                if (command.includes('core --out') || command.includes('metroman --out')) {
+                    refreshFileList();
+                }
+
+            } catch (error) {
+                console.error('Error executing command:', error);
+                const terminal = document.getElementById('terminal');
+                terminal.innerHTML += `<div class="terminal-line" style="color: red;">Error: ${error.message}</div>`;
+                terminal.scrollTop = terminal.scrollHeight;
+            }
+        };
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('Page loaded, initializing compiler...');
+            initCompiler();
+        });
+
+        // Also try to initialize immediately
+        initCompiler();
+    </script>
+</body>
+</html>
+
+
+

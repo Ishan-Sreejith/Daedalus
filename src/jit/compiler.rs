@@ -175,7 +175,26 @@ impl<'a> JitCompiler<'a> {
         let rt_list_push = runtime::rt_list_push as *const () as u64;
         let rt_alloc_map = runtime::rt_alloc_map as *const () as u64;
         let rt_map_set = runtime::rt_map_set as *const () as u64;
+        let rt_map_get = runtime::rt_map_get as *const () as u64;
+        let rt_map_keys = runtime::rt_map_keys as *const () as u64;
+        let rt_map_values = runtime::rt_map_values as *const () as u64;
         let rt_index_get = runtime::rt_index_get as *const () as u64;
+        let rt_index_set = runtime::rt_index_set as *const () as u64;
+        let rt_list_pop = runtime::rt_list_pop as *const () as u64;
+        let rt_list_len = runtime::rt_list_len as *const () as u64;
+        let rt_to_str = runtime::rt_to_str as *const () as u64;
+        let rt_to_num = runtime::rt_to_num as *const () as u64;
+        let rt_range = runtime::rt_range as *const () as u64;
+        let rt_abs = runtime::rt_abs as *const () as u64;
+        let rt_min = runtime::rt_min as *const () as u64;
+        let rt_max = runtime::rt_max as *const () as u64;
+        let rt_sqrt = runtime::rt_sqrt as *const () as u64;
+        let rt_pow = runtime::rt_pow as *const () as u64;
+        let rt_contains = runtime::rt_contains as *const () as u64;
+        let rt_float_add = runtime::rt_float_add as *const () as u64;
+        let rt_float_sub = runtime::rt_float_sub as *const () as u64;
+        let rt_float_mul = runtime::rt_float_mul as *const () as u64;
+        let rt_float_div = runtime::rt_float_div as *const () as u64;
         let rt_add = runtime::rt_add as *const () as u64;
         let rt_sub = runtime::rt_sub as *const () as u64;
         let rt_mul = runtime::rt_mul as *const () as u64;
@@ -198,12 +217,17 @@ impl<'a> JitCompiler<'a> {
                 | IrInstr::Mul { dest, .. }
                 | IrInstr::Div { dest, .. }
                 | IrInstr::Move { dest, .. }
+                | IrInstr::FAdd { dest, .. }
+                | IrInstr::FSub { dest, .. }
+                | IrInstr::FMul { dest, .. }
+                | IrInstr::FDiv { dest, .. }
                 | IrInstr::AllocMap { dest }
                 | IrInstr::AllocList { dest, .. }
                 | IrInstr::AllocStruct { dest, .. }
                 | IrInstr::GetIndex { dest, .. }
                 | IrInstr::GetMember { dest, .. }
                 | IrInstr::GetMap { dest, .. }
+                | IrInstr::Await { dest, .. }
                 | IrInstr::Lt { dest, .. }
                 | IrInstr::Gt { dest, .. }
                 | IrInstr::Eq { dest, .. }
@@ -654,6 +678,28 @@ impl<'a> JitCompiler<'a> {
                         assigned_order.push_back(dest.to_string());
                     }
                 }
+                IrInstr::AllocStruct { dest, name: _ } => {
+                    // For now, treat struct allocation like map allocation
+                    if assigned.contains(dest) {
+                        let loc = self
+                            .regmap
+                            .get(dest)
+                            .ok_or_else(|| format!("Undefined var: {}", dest))?;
+                        emit_save_call_regs(&mut emit);
+                        emit.load_to_reg(0, loc);
+                        emit.emit_call(rt_release);
+                        emit_restore_call_regs(&mut emit);
+                    }
+                    let dst_loc = self.regmap.alloc(dest)?;
+                    emit_save_call_regs(&mut emit);
+                    emit.emit_call(rt_alloc_map);
+                    emit.emit_u32_le(encode_add_imm(Reg::X(9), Reg::X(0), 0));
+                    emit_restore_call_regs(&mut emit);
+                    emit.store_from_reg(9, dst_loc);
+                    if assigned.insert(dest.to_string()) {
+                        assigned_order.push_back(dest.to_string());
+                    }
+                }
                 IrInstr::SetMap { map, key, value } => {
                     let map_loc = self
                         .regmap
@@ -695,6 +741,213 @@ impl<'a> JitCompiler<'a> {
                         assigned_order.push_back(dest.to_string());
                     }
                 }
+                IrInstr::SetIndex { src, index, value } => {
+                    let src_loc = self
+                        .regmap
+                        .get(src)
+                        .ok_or_else(|| format!("Undefined var: {}", src))?;
+                    let idx_loc = self
+                        .regmap
+                        .get(index)
+                        .ok_or_else(|| format!("Undefined var: {}", index))?;
+                    let val_loc = self
+                        .regmap
+                        .get(value)
+                        .ok_or_else(|| format!("Undefined var: {}", value))?;
+                    emit_call3(&mut emit, rt_index_set, src_loc, idx_loc, val_loc);
+                }
+                IrInstr::SetMember { obj, member, value } => {
+                    let obj_loc = self
+                        .regmap
+                        .get(obj)
+                        .ok_or_else(|| format!("Undefined var: {}", obj))?;
+                    let val_loc = self
+                        .regmap
+                        .get(value)
+                        .ok_or_else(|| format!("Undefined var: {}", value))?;
+                    let (ptr, len) = self.context.intern_bytes(member.as_bytes().to_vec());
+                    emit_save_call_regs(&mut emit);
+                    emit_mov64_to_reg(&mut emit, 0, ptr as u64);
+                    emit_mov64_to_reg(&mut emit, 1, len as u64);
+                    emit.emit_call(rt_alloc_string);
+                    emit.emit_u32_le(encode_add_imm(Reg::X(10), Reg::X(0), 0)); // key
+                    emit_restore_call_regs(&mut emit);
+
+                    emit_save_call_regs(&mut emit);
+                    emit.load_to_reg(9, obj_loc);
+                    emit.load_to_reg(11, val_loc);
+                    emit.emit_u32_le(encode_add_imm(Reg::X(0), Reg::X(9), 0));
+                    emit.emit_u32_le(encode_add_imm(Reg::X(1), Reg::X(10), 0));
+                    emit.emit_u32_le(encode_add_imm(Reg::X(2), Reg::X(11), 0));
+                    emit.emit_call(rt_map_set);
+                    emit_restore_call_regs(&mut emit);
+                }
+                IrInstr::GetMember { dest, obj, member } => {
+                    if assigned.contains(dest) {
+                        let loc = self
+                            .regmap
+                            .get(dest)
+                            .ok_or_else(|| format!("Undefined var: {}", dest))?;
+                        emit_save_call_regs(&mut emit);
+                        emit.load_to_reg(0, loc);
+                        emit.emit_call(rt_release);
+                        emit_restore_call_regs(&mut emit);
+                    }
+                    let dst_loc = self.regmap.alloc(dest)?;
+                    let obj_loc = self
+                        .regmap
+                        .get(obj)
+                        .ok_or_else(|| format!("Undefined var: {}", obj))?;
+                    let (ptr, len) = self.context.intern_bytes(member.as_bytes().to_vec());
+                    emit_save_call_regs(&mut emit);
+                    emit_mov64_to_reg(&mut emit, 0, ptr as u64);
+                    emit_mov64_to_reg(&mut emit, 1, len as u64);
+                    emit.emit_call(rt_alloc_string);
+                    emit.emit_u32_le(encode_add_imm(Reg::X(10), Reg::X(0), 0)); // key
+                    emit_restore_call_regs(&mut emit);
+
+                    emit_save_call_regs(&mut emit);
+                    emit.load_to_reg(9, obj_loc);
+                    emit.emit_u32_le(encode_add_imm(Reg::X(0), Reg::X(9), 0));
+                    emit.emit_u32_le(encode_add_imm(Reg::X(1), Reg::X(10), 0));
+                    emit.emit_call(rt_map_get);
+                    emit.emit_u32_le(encode_add_imm(Reg::X(9), Reg::X(0), 0));
+                    emit_restore_call_regs(&mut emit);
+                    emit.store_from_reg(9, dst_loc);
+                    if assigned.insert(dest.to_string()) {
+                        assigned_order.push_back(dest.to_string());
+                    }
+                }
+                IrInstr::GetMap { dest, map, key } => {
+                    if assigned.contains(dest) {
+                        let loc = self
+                            .regmap
+                            .get(dest)
+                            .ok_or_else(|| format!("Undefined var: {}", dest))?;
+                        emit_save_call_regs(&mut emit);
+                        emit.load_to_reg(0, loc);
+                        emit.emit_call(rt_release);
+                        emit_restore_call_regs(&mut emit);
+                    }
+                    let dst_loc = self.regmap.alloc(dest)?;
+                    let map_loc = self
+                        .regmap
+                        .get(map)
+                        .ok_or_else(|| format!("Undefined var: {}", map))?;
+                    let key_loc = self
+                        .regmap
+                        .get(key)
+                        .ok_or_else(|| format!("Undefined var: {}", key))?;
+                    emit_call2(&mut emit, rt_map_get, map_loc, key_loc);
+                    emit.store_from_reg(9, dst_loc);
+                    if assigned.insert(dest.to_string()) {
+                        assigned_order.push_back(dest.to_string());
+                    }
+                }
+                IrInstr::FAdd { dest, left, right } => {
+                    if assigned.contains(dest) {
+                        let loc = self
+                            .regmap
+                            .get(dest)
+                            .ok_or_else(|| format!("Undefined var: {}", dest))?;
+                        emit_save_call_regs(&mut emit);
+                        emit.load_to_reg(0, loc);
+                        emit.emit_call(rt_release);
+                        emit_restore_call_regs(&mut emit);
+                    }
+                    let dst_loc = self.regmap.alloc(dest)?;
+                    let l = self
+                        .regmap
+                        .get(left)
+                        .ok_or_else(|| format!("Undefined var: {}", left))?;
+                    let r = self
+                        .regmap
+                        .get(right)
+                        .ok_or_else(|| format!("Undefined var: {}", right))?;
+                    emit_call2(&mut emit, rt_float_add, l, r);
+                    emit.store_from_reg(9, dst_loc);
+                    if assigned.insert(dest.to_string()) {
+                        assigned_order.push_back(dest.to_string());
+                    }
+                }
+                IrInstr::FSub { dest, left, right } => {
+                    if assigned.contains(dest) {
+                        let loc = self
+                            .regmap
+                            .get(dest)
+                            .ok_or_else(|| format!("Undefined var: {}", dest))?;
+                        emit_save_call_regs(&mut emit);
+                        emit.load_to_reg(0, loc);
+                        emit.emit_call(rt_release);
+                        emit_restore_call_regs(&mut emit);
+                    }
+                    let dst_loc = self.regmap.alloc(dest)?;
+                    let l = self
+                        .regmap
+                        .get(left)
+                        .ok_or_else(|| format!("Undefined var: {}", left))?;
+                    let r = self
+                        .regmap
+                        .get(right)
+                        .ok_or_else(|| format!("Undefined var: {}", right))?;
+                    emit_call2(&mut emit, rt_float_sub, l, r);
+                    emit.store_from_reg(9, dst_loc);
+                    if assigned.insert(dest.to_string()) {
+                        assigned_order.push_back(dest.to_string());
+                    }
+                }
+                IrInstr::FMul { dest, left, right } => {
+                    if assigned.contains(dest) {
+                        let loc = self
+                            .regmap
+                            .get(dest)
+                            .ok_or_else(|| format!("Undefined var: {}", dest))?;
+                        emit_save_call_regs(&mut emit);
+                        emit.load_to_reg(0, loc);
+                        emit.emit_call(rt_release);
+                        emit_restore_call_regs(&mut emit);
+                    }
+                    let dst_loc = self.regmap.alloc(dest)?;
+                    let l = self
+                        .regmap
+                        .get(left)
+                        .ok_or_else(|| format!("Undefined var: {}", left))?;
+                    let r = self
+                        .regmap
+                        .get(right)
+                        .ok_or_else(|| format!("Undefined var: {}", right))?;
+                    emit_call2(&mut emit, rt_float_mul, l, r);
+                    emit.store_from_reg(9, dst_loc);
+                    if assigned.insert(dest.to_string()) {
+                        assigned_order.push_back(dest.to_string());
+                    }
+                }
+                IrInstr::FDiv { dest, left, right } => {
+                    if assigned.contains(dest) {
+                        let loc = self
+                            .regmap
+                            .get(dest)
+                            .ok_or_else(|| format!("Undefined var: {}", dest))?;
+                        emit_save_call_regs(&mut emit);
+                        emit.load_to_reg(0, loc);
+                        emit.emit_call(rt_release);
+                        emit_restore_call_regs(&mut emit);
+                    }
+                    let dst_loc = self.regmap.alloc(dest)?;
+                    let l = self
+                        .regmap
+                        .get(left)
+                        .ok_or_else(|| format!("Undefined var: {}", left))?;
+                    let r = self
+                        .regmap
+                        .get(right)
+                        .ok_or_else(|| format!("Undefined var: {}", right))?;
+                    emit_call2(&mut emit, rt_float_div, l, r);
+                    emit.store_from_reg(9, dst_loc);
+                    if assigned.insert(dest.to_string()) {
+                        assigned_order.push_back(dest.to_string());
+                    }
+                }
                 IrInstr::Print { src } => {
                     let src_loc = self
                         .regmap
@@ -718,6 +971,180 @@ impl<'a> JitCompiler<'a> {
                     emit_restore_call_regs(&mut emit);
                 }
                 IrInstr::Call { dest, func, args } => {
+                    if func == "print" || func == "println" {
+                        if args.len() != 1 {
+                            return Err(format!("{} expects 1 argument", func));
+                        }
+                        let src_loc = self
+                            .regmap
+                            .get(&args[0])
+                            .ok_or_else(|| format!("Undefined var: {}", args[0]))?;
+                        emit_save_call_regs(&mut emit);
+                        emit.load_to_reg(9, src_loc);
+                        emit.emit_u32_le(encode_add_imm(Reg::X(0), Reg::X(9), 0));
+                        emit.emit_call(rt_print);
+                        emit_restore_call_regs(&mut emit);
+                        if let Some(dest) = dest {
+                            if assigned.contains(dest) {
+                                let loc = self
+                                    .regmap
+                                    .get(dest)
+                                    .ok_or_else(|| format!("Undefined var: {}", dest))?;
+                                emit_save_call_regs(&mut emit);
+                                emit.load_to_reg(0, loc);
+                                emit.emit_call(rt_release);
+                                emit_restore_call_regs(&mut emit);
+                            }
+                            let dst_loc = self.regmap.alloc(dest)?;
+                            emit_mov64_to_reg(&mut emit, 9, encode_int(0));
+                            emit.store_from_reg(9, dst_loc);
+                            if assigned.insert(dest.to_string()) {
+                                assigned_order.push_back(dest.to_string());
+                            }
+                        }
+                        continue;
+                    }
+
+                    let builtin_call = match (func.as_str(), args.len()) {
+                        ("len", 1) => Some((rt_list_len, args[0].as_str())),
+                        ("str", 1) => Some((rt_to_str, args[0].as_str())),
+                        ("num", 1) => Some((rt_to_num, args[0].as_str())),
+                        ("keys", 1) => Some((rt_map_keys, args[0].as_str())),
+                        ("values", 1) => Some((rt_map_values, args[0].as_str())),
+                        ("pop", 1) => Some((rt_list_pop, args[0].as_str())),
+                        ("abs", 1) => Some((rt_abs, args[0].as_str())),
+                        ("sqrt", 1) => Some((rt_sqrt, args[0].as_str())),
+                        ("range", 2) => None,
+                        ("push", 2) => None,
+                        _ => None,
+                    };
+
+                    if let Some((callee, a0)) = builtin_call {
+                        let a0_loc = self
+                            .regmap
+                            .get(a0)
+                            .ok_or_else(|| format!("Undefined var: {}", a0))?;
+                        emit_call1(&mut emit, callee, a0_loc);
+                        if let Some(dest) = dest {
+                            if assigned.contains(dest) {
+                                let loc = self
+                                    .regmap
+                                    .get(dest)
+                                    .ok_or_else(|| format!("Undefined var: {}", dest))?;
+                                emit_save_call_regs(&mut emit);
+                                emit.load_to_reg(0, loc);
+                                emit.emit_call(rt_release);
+                                emit_restore_call_regs(&mut emit);
+                            }
+                            let dst_loc = self.regmap.alloc(dest)?;
+                            emit.store_from_reg(9, dst_loc);
+                            if assigned.insert(dest.to_string()) {
+                                assigned_order.push_back(dest.to_string());
+                            }
+                        }
+                        continue;
+                    }
+
+                    if func == "range" && args.len() == 2 {
+                        let a0 = self
+                            .regmap
+                            .get(&args[0])
+                            .ok_or_else(|| format!("Undefined var: {}", args[0]))?;
+                        let a1 = self
+                            .regmap
+                            .get(&args[1])
+                            .ok_or_else(|| format!("Undefined var: {}", args[1]))?;
+                        emit_call2(&mut emit, rt_range, a0, a1);
+                        if let Some(dest) = dest {
+                            if assigned.contains(dest) {
+                                let loc = self
+                                    .regmap
+                                    .get(dest)
+                                    .ok_or_else(|| format!("Undefined var: {}", dest))?;
+                                emit_save_call_regs(&mut emit);
+                                emit.load_to_reg(0, loc);
+                                emit.emit_call(rt_release);
+                                emit_restore_call_regs(&mut emit);
+                            }
+                            let dst_loc = self.regmap.alloc(dest)?;
+                            emit.store_from_reg(9, dst_loc);
+                            if assigned.insert(dest.to_string()) {
+                                assigned_order.push_back(dest.to_string());
+                            }
+                        }
+                        continue;
+                    }
+
+                    if (func == "min" || func == "max" || func == "pow" || func == "contains")
+                        && args.len() == 2
+                    {
+                        let a0 = self
+                            .regmap
+                            .get(&args[0])
+                            .ok_or_else(|| format!("Undefined var: {}", args[0]))?;
+                        let a1 = self
+                            .regmap
+                            .get(&args[1])
+                            .ok_or_else(|| format!("Undefined var: {}", args[1]))?;
+                        let callee = match func.as_str() {
+                            "min" => rt_min,
+                            "max" => rt_max,
+                            "pow" => rt_pow,
+                            "contains" => rt_contains,
+                            _ => unreachable!(),
+                        };
+                        emit_call2(&mut emit, callee, a0, a1);
+                        if let Some(dest) = dest {
+                            if assigned.contains(dest) {
+                                let loc = self
+                                    .regmap
+                                    .get(dest)
+                                    .ok_or_else(|| format!("Undefined var: {}", dest))?;
+                                emit_save_call_regs(&mut emit);
+                                emit.load_to_reg(0, loc);
+                                emit.emit_call(rt_release);
+                                emit_restore_call_regs(&mut emit);
+                            }
+                            let dst_loc = self.regmap.alloc(dest)?;
+                            emit.store_from_reg(9, dst_loc);
+                            if assigned.insert(dest.to_string()) {
+                                assigned_order.push_back(dest.to_string());
+                            }
+                        }
+                        continue;
+                    }
+
+                    if func == "push" && args.len() == 2 {
+                        let list_loc = self
+                            .regmap
+                            .get(&args[0])
+                            .ok_or_else(|| format!("Undefined var: {}", args[0]))?;
+                        let item_loc = self
+                            .regmap
+                            .get(&args[1])
+                            .ok_or_else(|| format!("Undefined var: {}", args[1]))?;
+                        emit_call2(&mut emit, rt_list_push, list_loc, item_loc);
+                        if let Some(dest) = dest {
+                            if assigned.contains(dest) {
+                                let loc = self
+                                    .regmap
+                                    .get(dest)
+                                    .ok_or_else(|| format!("Undefined var: {}", dest))?;
+                                emit_save_call_regs(&mut emit);
+                                emit.load_to_reg(0, loc);
+                                emit.emit_call(rt_release);
+                                emit_restore_call_regs(&mut emit);
+                            }
+                            let dst_loc = self.regmap.alloc(dest)?;
+                            emit_call1(&mut emit, rt_list_len, list_loc);
+                            emit.store_from_reg(9, dst_loc);
+                            if assigned.insert(dest.to_string()) {
+                                assigned_order.push_back(dest.to_string());
+                            }
+                        }
+                        continue;
+                    }
+
                     emit_save_call_regs(&mut emit);
                     if args.len() > 8 {
                         return Err("More than 8 call args not supported yet".to_string());
@@ -752,6 +1179,36 @@ impl<'a> JitCompiler<'a> {
                         if assigned.insert(dest.to_string()) {
                             assigned_order.push_back(dest.to_string());
                         }
+                    }
+                }
+                IrInstr::Spawn { task } => {
+                    // JIT backend does not yet have async scheduler integration.
+                    // Preserve semantics by treating spawn as a passthrough value.
+                    let task_loc = self
+                        .regmap
+                        .get(task)
+                        .ok_or_else(|| format!("Undefined var: {}", task))?;
+                    emit.emit_mov(task_loc, task_loc);
+                }
+                IrInstr::Await { dest, task } => {
+                    if assigned.contains(dest) {
+                        let loc = self
+                            .regmap
+                            .get(dest)
+                            .ok_or_else(|| format!("Undefined var: {}", dest))?;
+                        emit_save_call_regs(&mut emit);
+                        emit.load_to_reg(0, loc);
+                        emit.emit_call(rt_release);
+                        emit_restore_call_regs(&mut emit);
+                    }
+                    let dst_loc = self.regmap.alloc(dest)?;
+                    let task_loc = self
+                        .regmap
+                        .get(task)
+                        .ok_or_else(|| format!("Undefined var: {}", task))?;
+                    emit.emit_mov(dst_loc, task_loc);
+                    if assigned.insert(dest.to_string()) {
+                        assigned_order.push_back(dest.to_string());
                     }
                 }
                 IrInstr::Label { name } => self.labels.define_label(name, emit.len()),
@@ -821,13 +1278,24 @@ impl<'a> JitCompiler<'a> {
                 | IrInstr::Sub { dest, .. }
                 | IrInstr::Mul { dest, .. }
                 | IrInstr::Div { dest, .. }
+                | IrInstr::FAdd { dest, .. }
+                | IrInstr::FSub { dest, .. }
+                | IrInstr::FMul { dest, .. }
+                | IrInstr::FDiv { dest, .. }
                 | IrInstr::Move { dest, .. }
                 | IrInstr::Lt { dest, .. }
                 | IrInstr::Gt { dest, .. }
                 | IrInstr::Eq { dest, .. }
+                | IrInstr::Ne { dest, .. }
+                | IrInstr::LogicAnd { dest, .. }
+                | IrInstr::LogicOr { dest, .. }
+                | IrInstr::LogicNot { dest, .. }
                 | IrInstr::AllocMap { dest }
                 | IrInstr::AllocList { dest, .. }
                 | IrInstr::GetIndex { dest, .. } => Some(dest.as_str()),
+                | IrInstr::GetMap { dest, .. }
+                | IrInstr::GetMember { dest, .. }
+                | IrInstr::Await { dest, .. } => Some(dest.as_str()),
                 IrInstr::Call {
                     dest: Some(dest), ..
                 } => Some(dest.as_str()),
@@ -887,5 +1355,122 @@ impl<'a> JitCompiler<'a> {
         self.context.add_code_block(mem);
 
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::jit::context::JitContext;
+
+    fn decode_int(v: u64) -> i64 {
+        (v as i64) >> 1
+    }
+
+    fn run(instrs: Vec<IrInstr>) -> u64 {
+        let mut ctx = JitContext::new();
+        let mut jit = JitCompiler::new(&mut ctx);
+        jit.execute_global(&instrs).expect("jit execute")
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    fn jit_e2e_builtin_pow_and_sqrt() {
+        let result = run(vec![
+            IrInstr::LoadConst {
+                dest: "a".to_string(),
+                value: IrValue::Number(2.0),
+            },
+            IrInstr::LoadConst {
+                dest: "b".to_string(),
+                value: IrValue::Number(8.0),
+            },
+            IrInstr::Call {
+                dest: Some("p".to_string()),
+                func: "pow".to_string(),
+                args: vec!["a".to_string(), "b".to_string()],
+            },
+            IrInstr::Call {
+                dest: Some("s".to_string()),
+                func: "sqrt".to_string(),
+                args: vec!["p".to_string()],
+            },
+            IrInstr::Call {
+                dest: Some("out".to_string()),
+                func: "num".to_string(),
+                args: vec!["s".to_string()],
+            },
+            IrInstr::Return {
+                value: Some("out".to_string()),
+            },
+        ]);
+
+        assert_eq!(decode_int(result), 16);
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    fn jit_e2e_builtin_range_len_pop() {
+        let result = run(vec![
+            IrInstr::LoadConst {
+                dest: "s".to_string(),
+                value: IrValue::Number(1.0),
+            },
+            IrInstr::LoadConst {
+                dest: "e".to_string(),
+                value: IrValue::Number(5.0),
+            },
+            IrInstr::Call {
+                dest: Some("r".to_string()),
+                func: "range".to_string(),
+                args: vec!["s".to_string(), "e".to_string()],
+            },
+            IrInstr::Call {
+                dest: Some("len".to_string()),
+                func: "len".to_string(),
+                args: vec!["r".to_string()],
+            },
+            IrInstr::Call {
+                dest: Some("last".to_string()),
+                func: "pop".to_string(),
+                args: vec!["r".to_string()],
+            },
+            IrInstr::Add {
+                dest: "sum".to_string(),
+                left: "len".to_string(),
+                right: "last".to_string(),
+            },
+            IrInstr::Return {
+                value: Some("sum".to_string()),
+            },
+        ]);
+
+        // len([1,2,3,4]) + pop(...) = 4 + 4 = 8
+        assert_eq!(decode_int(result), 8);
+    }
+
+    #[test]
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    fn jit_e2e_builtin_contains() {
+        let result = run(vec![
+            IrInstr::LoadConst {
+                dest: "hay".to_string(),
+                value: IrValue::String("forge compiler".to_string()),
+            },
+            IrInstr::LoadConst {
+                dest: "needle".to_string(),
+                value: IrValue::String("comp".to_string()),
+            },
+            IrInstr::Call {
+                dest: Some("ok".to_string()),
+                func: "contains".to_string(),
+                args: vec!["hay".to_string(), "needle".to_string()],
+            },
+            IrInstr::Return {
+                value: Some("ok".to_string()),
+            },
+        ]);
+
+        assert_eq!(decode_int(result), 1);
     }
 }

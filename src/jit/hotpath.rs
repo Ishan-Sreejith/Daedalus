@@ -1,6 +1,7 @@
 //! Hotpath Optimizer - Identifies and optimizes frequently executed code paths
 //!
 //! Tracks execution frequency and applies aggressive optimizations to hot code
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 

@@ -1,6 +1,7 @@
 mod analyzer;
 mod ast;
 mod codegen;
+mod debug_timer;
 mod diagnostics;
 mod ir;
 mod jit;
@@ -9,13 +10,17 @@ mod meta;
 mod parser;
 mod runtime;
 
+#[cfg(not(target_arch = "wasm32"))]
 use clap::Parser as ClapParser;
 use std::fs;
+#[cfg(not(target_arch = "wasm32"))]
 use std::process::Command;
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(ClapParser)]
 #[command(name = "forge")]
 #[command(about = "CoRe Language Compiler", long_about = None)]
+#[cfg(not(target_arch = "wasm32"))]
 struct Cli {
     /// Source file to compile
     file: Option<String>,
@@ -67,8 +72,13 @@ struct Cli {
     /// Run using the JIT pipeline
     #[arg(short = 'j', long = "jit")]
     jit: bool,
+
+    /// Enable debug mode with timing information
+    #[arg(short = 'D', long = "debug")]
+    debug: bool,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ExecMode {
     Direct,
@@ -77,6 +87,7 @@ enum ExecMode {
     Jit,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn resolve_exec_mode(cli: &Cli) -> Result<ExecMode, String> {
     let wants_direct = cli.direct || cli.rust;
     let wants_vm = cli.asm || cli.vm;
@@ -107,9 +118,14 @@ fn resolve_exec_mode(cli: &Cli) -> Result<ExecMode, String> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     let cli = Cli::parse();
     let verbose = cli.info;
+    let debug = cli.debug;
+
+    // Initialize debug timer
+    let timer = debug_timer::DebugTimer::new(debug);
 
     let exec_mode = resolve_exec_mode(&cli).unwrap_or_else(|e| {
         eprintln!("{}", e);
@@ -118,6 +134,7 @@ fn main() {
 
     // Handle syntax dump/load (no source file required)
     if cli.out {
+        let _phase = timer.phase("Syntax Dump");
         let mapping = meta::syntax_dump::SyntaxMapping::from_compiler();
         match mapping.dump_to_file("syntax.fr") {
             Ok(_) => println!("✓ Syntax mapping dumped to syntax.fr"),
@@ -126,9 +143,13 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        _phase.finish();
+        timer.print_total("syntax dump");
         return;
     }
+
     if cli.in_syntax {
+        let _phase = timer.phase("Syntax Load");
         match meta::syntax_dump::SyntaxMapping::load_from_file("syntax.fr") {
             Ok(mapping) => match meta::syntax_load::rebuild_from_syntax(&mapping) {
                 Ok(_) => println!("✓ Compiler rebuilt from syntax.fr"),
@@ -142,6 +163,8 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        _phase.finish();
+        timer.print_total("syntax load");
         return;
     }
 
@@ -349,335 +372,427 @@ fn main() {
         }
     };
 
-    // Read source code
-    let source = match fs::read_to_string(&source_file) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("✗ Error reading file '{}': {}", source_file, e);
-            std::process::exit(1);
-        }
-    };
-
-    // Lexical analysis
-    if verbose {
-        println!("→ Lexing...");
-    }
-    let tokens: Result<Vec<_>, _> = lexer::Lexer::new(&source)
-        .map(|(token, span)| match token {
-            Ok(t) => Ok((t, span)),
-            Err(e) => Err(e),
-        })
-        .collect();
-    let tokens = match tokens {
-        Ok(t) => t,
-        Err(e) => {
-            eprintln!("✗ Lexer error: {}", e);
-            std::process::exit(1);
-        }
-    };
-
-    // Parsing
-    if verbose {
-        println!("→ Parsing...");
-    }
-    let mut parser = parser::Parser::new(tokens);
-    let program = match parser.parse() {
-        Ok(p) => p,
-        Err(e) => {
-            // Try to extract byte offset if available
-            if let Some(byte_pos) = e
-                .split("at byte ")
-                .nth(1)
-                .and_then(|s| s.parse::<usize>().ok())
-            {
-                let mut line = 1;
-                let mut col = 1;
-                for (i, c) in source.char_indices() {
-                    if i == byte_pos {
-                        break;
-                    }
-                    if c == '\n' {
-                        line += 1;
-                        col = 1;
-                    } else {
-                        col += 1;
-                    }
+    // Read source code with timing
+    let source = debug_time!(timer, "File Reading", {
+        match fs::read_to_string(&source_file) {
+            Ok(s) => {
+                if debug {
+                    println!("[DEBUG] Read {} bytes from {}", s.len(), source_file);
                 }
-
-                let mut diag =
-                    diagnostics::Diagnostic::error(e.split(" at byte").next().unwrap_or(&e))
-                        .at(line, col);
-
-                // Add simple suggestions based on error content
-                if e.contains("Expected Colon") {
-                    diag.suggestion = Some("Missing ':' after command or declaration".to_string());
-                } else if e.contains("Unexpected token: Some(Identifier") {
-                    diag.suggestion = Some("Check if you forgot a keyword or operator".to_string());
-                }
-
-                diag.render(Some(&source));
-            } else {
-                diagnostics::Diagnostic::error(&e).render(Some(&source));
-            }
-            std::process::exit(1);
-        }
-    };
-
-    // IR generation
-    if verbose {
-        println!("→ Generating IR...");
-    }
-    let mut ir_builder = ir::IrBuilder::new();
-    let ir_program = match ir_builder.build(&program, Some(std::path::Path::new(&source_file))) {
-        Ok(ir) => ir,
-        Err(e) => {
-            eprintln!("✗ IR generation error: {}", e);
-            std::process::exit(1);
-        }
-    };
-
-    // Static analysis
-    if verbose {
-        println!("→ Analyzing...");
-    }
-    let mut analyzer = analyzer::Analyzer::new();
-    if let Err(errors) = analyzer.analyze(&ir_program) {
-        eprintln!("✗ Analysis errors:");
-        for error in errors {
-            eprintln!("  - {}", error);
-        }
-        std::process::exit(1);
-    }
-
-    // Show warnings
-    for warning in analyzer.get_warnings() {
-        if verbose {
-            println!("⚠ Warning: {}", warning);
-        }
-    }
-
-    if exec_mode == ExecMode::Native {
-        // Native compilation and execution (ARM64 Assembly)
-        if verbose {
-            println!("→ Generating ARM64 assembly...");
-        }
-        let mut codegen = codegen::arm64::Arm64CodeGen::new();
-        let _asm = match codegen.generate(&ir_program) {
-            Ok(a) => a,
+                s
+            },
             Err(e) => {
-                eprintln!("✗ Code generation error: {}", e);
-                std::process::exit(1);
-            }
-        };
-
-        // Write assembly to file
-        let asm_file = source_file.replace(".fr", ".s");
-        match codegen.write_to_file(&asm_file) {
-            Ok(_) => {
-                if verbose {
-                    println!("✓ Assembly written to {}", asm_file);
-                }
-            }
-            Err(e) => {
-                eprintln!("✗ Error writing assembly: {}", e);
+                eprintln!("✗ Error reading file '{}': {}", source_file, e);
+                eprintln!("  Make sure the file exists and is readable");
                 std::process::exit(1);
             }
         }
+    });
 
-        // Native compilation and execution
+    // Lexical analysis with timing
+    let tokens = debug_time!(timer, "Lexical Analysis", {
         if verbose {
-            println!("→ Assembling and linking...");
+            println!("→ Lexing...");
         }
-        let output_file = source_file.replace(".fr", "");
+        let tokens: Result<Vec<_>, _> = lexer::Lexer::new(&source)
+            .map(|(token, span)| match token {
+                Ok(t) => Ok((t, span)),
+                Err(e) => Err(e),
+            })
+            .collect();
 
-        // Assemble
-        let status = Command::new("as")
-            .args(&["-o", &format!("{}.o", output_file), &asm_file])
-            .status();
-
-        if !status.map(|s| s.success()).unwrap_or(false) {
-            eprintln!("✗ Assembly failed");
-            std::process::exit(1);
+        match tokens {
+            Ok(t) => {
+                if debug {
+                    println!("[DEBUG] Produced {} tokens", t.len());
+                }
+                t
+            },
+            Err(e) => {
+                eprintln!("✗ Lexer error: {}", e);
+                eprintln!("  Check for invalid characters or syntax errors");
+                std::process::exit(1);
+            }
         }
+    });
 
-        // Link
-        let default_sdk = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk";
-        let sdk_path = if std::path::Path::new(default_sdk).exists() {
-            default_sdk.to_string()
-        } else {
-            Command::new("xcrun")
-                .args(["--sdk", "macosx", "--show-sdk-path"])
-                .output()
-                .ok()
-                .and_then(|o| {
-                    if o.status.success() {
-                        Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-                    } else {
-                        None
+    // Parsing with timing
+    let program = debug_time!(timer, "Parsing", {
+        if verbose {
+            println!("→ Parsing...");
+        }
+        let mut parser = parser::Parser::new(tokens);
+        match parser.parse() {
+            Ok(p) => {
+                if debug {
+                    println!("[DEBUG] Parsed {} top-level items", p.items.len());
+                }
+                p
+            },
+            Err(e) => {
+                // Enhanced error reporting with file context
+                if let Some(byte_pos) = e
+                    .split("at byte ")
+                    .nth(1)
+                    .and_then(|s| s.parse::<usize>().ok())
+                {
+                    let mut line = 1;
+                    let mut col = 1;
+                    for (i, c) in source.char_indices() {
+                        if i == byte_pos {
+                            break;
+                        }
+                        if c == '\n' {
+                            line += 1;
+                            col = 1;
+                        } else {
+                            col += 1;
+                        }
                     }
-                })
-                .unwrap_or_else(|| default_sdk.to_string())
-        };
 
-        let status = Command::new("ld")
-            .args(&[
-                "-o",
-                &output_file,
-                &format!("{}.o", output_file),
-                "-lSystem",
-                "-syslibroot",
-                &sdk_path,
-                "-e",
-                "_main",
-                "-arch",
-                "arm64",
-            ])
-            .status();
+                    let mut diag =
+                        diagnostics::Diagnostic::error(e.split(" at byte").next().unwrap_or(&e))
+                            .at(line, col);
 
-        if !status.map(|s| s.success()).unwrap_or(false) {
-            eprintln!("✗ Linking failed");
-            std::process::exit(1);
-        }
-
-        // Cleanup object file
-        fs::remove_file(format!("{}.o", output_file)).ok();
-
-        if verbose {
-            println!("✓ Compilation successful!");
-        }
-
-        if cli.build {
-            return;
-        }
-
-        if verbose {
-            println!("→ Executing native binary...");
-        }
-        println!();
-
-        match Command::new(format!("./{}", output_file)).status() {
-            Ok(status) => {
-                println!();
-                if status.success() {
-                    if verbose {
-                        println!("✓ Native execution completed successfully");
+                    // Enhanced suggestions based on error content
+                    if e.contains("Expected Colon") {
+                        diag.suggestion = Some("Missing ':' after command or declaration".to_string());
+                    } else if e.contains("Unexpected token: Some(Identifier") {
+                        diag.suggestion = Some("Check if you forgot a keyword or operator".to_string());
+                    } else if e.contains("Expected LBrace") {
+                        diag.suggestion = Some("Missing opening '{' for block".to_string());
+                    } else if e.contains("Expected RBrace") {
+                        diag.suggestion = Some("Missing closing '}' for block".to_string());
                     }
+
+                    diag.render(Some(&source));
                 } else {
-                    eprintln!("✗ Native execution failed with status: {}", status);
+                    diagnostics::Diagnostic::error(&e).render(Some(&source));
                 }
-            }
-            Err(e) => {
-                eprintln!("✗ Failed to execute binary: {}", e);
                 std::process::exit(1);
             }
         }
-    } else if exec_mode == ExecMode::Jit {
+    });
+
+    // IR generation with timing
+    let ir_program = debug_time!(timer, "IR Generation", {
         if verbose {
-            println!("→ Executing via JIT...");
+            println!("→ Generating IR...");
+        }
+        let mut ir_builder = ir::IrBuilder::new();
+        match ir_builder.build(&program, Some(std::path::Path::new(&source_file))) {
+            Ok(ir) => {
+                if debug {
+                    let func_instrs: usize =
+                        ir.functions.values().map(|f| f.instructions.len()).sum();
+                    let total_instrs = ir.global_code.len() + func_instrs;
+                    println!("[DEBUG] Generated {} IR instructions", total_instrs);
+                }
+                ir
+            },
+            Err(e) => {
+                eprintln!("✗ IR generation error: {}", e);
+                eprintln!("  This usually indicates a semantic error in your code");
+                std::process::exit(1);
+            }
+        }
+    });
+
+    // Static analysis with timing
+    let _analyzer = debug_time!(timer, "Static Analysis", {
+        if verbose {
+            println!("→ Analyzing...");
+        }
+        let mut analyzer = analyzer::Analyzer::new();
+        if let Err(errors) = analyzer.analyze(&ir_program) {
+            eprintln!("✗ Analysis errors:");
+            for error in errors {
+                eprintln!("  - {}", error);
+            }
+            eprintln!("  Fix these errors before running your code");
+            std::process::exit(1);
         }
 
-        let mut context = jit::context::JitContext::new();
-        let mut jit = jit::compiler::JitCompiler::new(&mut context);
-        // Ensure all functions are compiled before executing global code so calls resolve.
-        // Keep deterministic ordering to avoid nondeterministic code addresses between runs.
-        let mut func_names: Vec<_> = ir_program.functions.keys().cloned().collect();
-        func_names.sort_by(|a, b| b.cmp(a)); // reverse order, matching fforge
-        for name in func_names {
-            if let Some(func) = ir_program.functions.get(&name) {
-                if let Err(e) = jit.compile_function(func) {
-                    eprintln!("✗ JIT Compilation Error (Function {}): {}", name, e);
+        // Show warnings
+        for warning in analyzer.get_warnings() {
+            if verbose {
+                println!("⚠ Warning: {}", warning);
+            }
+        }
+
+        if debug {
+            let warnings = analyzer.get_warnings();
+            println!("[DEBUG] Analysis complete - {} warnings", warnings.len());
+        }
+
+        analyzer
+    });
+
+    // Execute based on mode
+    match exec_mode {
+        ExecMode::Native => {
+            debug_time!(timer, "Native Compilation", {
+                if verbose {
+                    println!("→ Generating ARM64 assembly...");
+                }
+                let mut codegen = codegen::arm64::Arm64CodeGen::new();
+                let _asm = match codegen.generate(&ir_program) {
+                    Ok(a) => a,
+                    Err(e) => {
+                        eprintln!("✗ Code generation error: {}", e);
+                        eprintln!("  This indicates an issue with ARM64 code generation");
+                        std::process::exit(1);
+                    }
+                };
+
+                let asm_file = source_file.replace(".fr", ".s");
+                match codegen.write_to_file(&asm_file) {
+                    Ok(_) => {
+                        if verbose || debug {
+                            println!("✓ Assembly written to {}", asm_file);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("✗ Error writing assembly: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+
+                if verbose {
+                    println!("→ Assembling and linking...");
+                }
+                let output_file = source_file.replace(".fr", "");
+
+                let status = Command::new("as")
+                    .args(["-o", &format!("{}.o", output_file), &asm_file])
+                    .status();
+                if !status.map(|s| s.success()).unwrap_or(false) {
+                    eprintln!("✗ Assembly failed");
+                    eprintln!("  Make sure you have Xcode command line tools installed");
                     std::process::exit(1);
                 }
-            }
-        }
 
-        match jit.execute_global(&ir_program.global_code) {
-            Ok(res) => {
-                if verbose {
-                    println!("✓ JIT execution completed. Result: {}", res);
-                }
-                println!("{}", render_encoded(res));
-            }
-            Err(e) => {
-                eprintln!("✗ JIT Error: {}", e);
-                std::process::exit(1);
-            }
-        }
-    } else if exec_mode == ExecMode::Vm {
-        if verbose {
-            println!("→ Executing via ARM64 VM...");
-        }
-        println!();
-
-        // VM consumes ARM64 assembly (.s). Generate it here.
-        if verbose {
-            println!("→ Generating ARM64 assembly for VM...");
-        }
-        let mut codegen = codegen::arm64::Arm64CodeGen::new();
-        let _asm = match codegen.generate(&ir_program) {
-            Ok(a) => a,
-            Err(e) => {
-                eprintln!("✗ Code generation error: {}", e);
-                std::process::exit(1);
-            }
-        };
-        let asm_file = source_file.replace(".fr", ".s");
-        if let Err(e) = codegen.write_to_file(&asm_file) {
-            eprintln!("✗ Error writing assembly: {}", e);
-            std::process::exit(1);
-        }
-        if verbose {
-            println!("✓ Assembly written to {}", asm_file);
-        }
-
-        let mut vm_cmd = find_or_build_arm64vm().unwrap_or_else(|e| {
-            eprintln!("✗ {}", e);
-            eprintln!(
-                "  Ensure arm64vm is built (vm/target/release/arm64vm) or installed in PATH."
-            );
-            std::process::exit(1);
-        });
-
-        match vm_cmd.arg(&asm_file).status() {
-            Ok(status) => {
-                println!();
-                if status.success() {
-                    if verbose {
-                        println!("✓ VM execution completed successfully");
-                    }
+                let default_sdk = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk";
+                let sdk_path = if std::path::Path::new(default_sdk).exists() {
+                    default_sdk.to_string()
                 } else {
-                    eprintln!("✗ VM execution failed with status: {}", status);
-                }
-            }
-            Err(e) => {
-                eprintln!("✗ Failed to execute arm64vm: {}", e);
-                eprintln!("  Ensure arm64vm is installed and in your PATH.");
-                std::process::exit(1);
-            }
-        }
-    } else {
-        // Default: Direct execution mode via Interpreter
-        if verbose {
-            println!("→ Executing via Interpreter...");
-        }
-        println!();
+                    Command::new("xcrun")
+                        .args(["--sdk", "macosx", "--show-sdk-path"])
+                        .output()
+                        .ok()
+                        .and_then(|o| {
+                            if o.status.success() {
+                                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or_else(|| default_sdk.to_string())
+                };
 
-        let mut executor = codegen::direct::DirectExecutor::new();
-        match executor.execute(&ir_program) {
-            Ok(_) => {
-                if verbose {
-                    println!();
-                    println!("✓ Execution completed");
+                let link_result = Command::new("ld")
+                    .args([
+                        "-o",
+                        &output_file,
+                        &format!("{}.o", output_file),
+                        "-lSystem",
+                        "-syslibroot",
+                        &sdk_path,
+                        "-e",
+                        "_main",
+                    ])
+                    .status();
+                if !link_result.map(|s| s.success()).unwrap_or(false) {
+                    eprintln!("✗ Linking failed");
+                    eprintln!("  Check that the SDK path is correct: {}", sdk_path);
+                    std::process::exit(1);
                 }
-            }
-            Err(e) => {
-                eprintln!("✗ Execution failed: {}", e);
-                std::process::exit(1);
-            }
+
+                if verbose || debug {
+                    println!("✓ Executable created: {}", output_file);
+                }
+
+                if !cli.build {
+                    if verbose {
+                        println!("→ Executing native binary...");
+                    }
+                    match Command::new(format!("./{}", output_file)).status() {
+                        Ok(status) => {
+                            if debug {
+                                println!("[DEBUG] Native execution completed with status: {}", status);
+                            }
+                            if !status.success() {
+                                if let Some(code) = status.code() {
+                                    std::process::exit(code);
+                                }
+                                std::process::exit(1);
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("✗ Execution failed: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+            });
+        }
+        ExecMode::Jit => {
+            debug_time!(timer, "JIT Compilation & Execution", {
+                if verbose {
+                    println!("→ Executing via JIT...");
+                }
+
+                let mut context = jit::context::JitContext::new();
+                let mut jit = jit::compiler::JitCompiler::new(&mut context);
+
+                let mut func_names: Vec<_> = ir_program.functions.keys().cloned().collect();
+                func_names.sort_by(|a, b| b.cmp(a));
+
+                if debug {
+                    println!("[DEBUG] Compiling {} functions", func_names.len());
+                }
+
+                for name in func_names {
+                    if let Some(func) = ir_program.functions.get(&name) {
+                        match jit.compile_function(func) {
+                            Ok(_) => {
+                                if debug {
+                                    println!("[DEBUG] Compiled function: {}", name);
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("✗ JIT Compilation Error (Function {}): {}", name, e);
+                                eprintln!("  Check the function implementation for errors");
+                                std::process::exit(1);
+                            }
+                        }
+                    }
+                }
+
+                if debug {
+                    println!(
+                        "[DEBUG] Executing global code with {} instructions",
+                        ir_program.global_code.len()
+                    );
+                }
+
+                match jit.execute_global(&ir_program.global_code) {
+                    Ok(res) => {
+                        if verbose {
+                            println!("✓ JIT execution completed. Result: {}", res);
+                        }
+                        println!("{}", render_encoded(res));
+                    }
+                    Err(e) => {
+                        eprintln!("✗ JIT Runtime Error: {}", e);
+                        eprintln!("  This usually indicates a runtime issue in your code");
+                        std::process::exit(1);
+                    }
+                }
+            });
+        }
+        ExecMode::Vm => {
+            debug_time!(timer, "VM Assembly Generation & Execution", {
+                if verbose {
+                    println!("→ Executing via ARM64 VM...");
+                }
+
+                if verbose {
+                    println!("→ Generating ARM64 assembly for VM...");
+                }
+                let mut codegen = codegen::arm64::Arm64CodeGen::new();
+                let _asm = match codegen.generate(&ir_program) {
+                    Ok(a) => a,
+                    Err(e) => {
+                        eprintln!("✗ Code generation error: {}", e);
+                        eprintln!("  Failed to generate ARM64 assembly for VM");
+                        std::process::exit(1);
+                    }
+                };
+
+                let asm_file = source_file.replace(".fr", ".s");
+                if let Err(e) = codegen.write_to_file(&asm_file) {
+                    eprintln!("✗ Error writing assembly: {}", e);
+                    std::process::exit(1);
+                }
+
+                if verbose || debug {
+                    println!("✓ Assembly written to {}", asm_file);
+                }
+
+                let mut vm_cmd = find_or_build_arm64vm().unwrap_or_else(|e| {
+                    eprintln!("✗ {}", e);
+                    eprintln!(
+                        "  Ensure arm64vm is built (vm/target/release/arm64vm) or installed in PATH."
+                    );
+                    std::process::exit(1);
+                });
+
+                vm_cmd.arg(&asm_file);
+
+                if debug {
+                    println!("[DEBUG] Executing VM command: {:?}", vm_cmd);
+                }
+
+                match vm_cmd.status() {
+                    Ok(status) => {
+                        if debug {
+                            println!("[DEBUG] VM execution completed with status: {}", status);
+                        }
+                        if !status.success() {
+                            eprintln!("✗ VM execution failed with status: {}", status);
+                            if let Some(code) = status.code() {
+                                std::process::exit(code);
+                            }
+                            std::process::exit(1);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("✗ Failed to execute VM: {}", e);
+                        eprintln!("  Make sure the ARM64 VM is properly installed and accessible");
+                        std::process::exit(1);
+                    }
+                }
+            });
+        }
+        ExecMode::Direct => {
+            debug_time!(timer, "Direct Execution (Interpreter)", {
+                if verbose {
+                    println!("→ Executing via Interpreter...");
+                }
+
+                if debug {
+                    println!(
+                        "[DEBUG] Starting direct execution with {} global instructions",
+                        ir_program.global_code.len()
+                    );
+                }
+
+                let mut executor = codegen::direct::DirectExecutor::new();
+                match executor.execute(&ir_program) {
+                    Ok(_) => {
+                        if verbose {
+                            println!("✓ Interpreter execution completed");
+                        }
+                        if debug {
+                            println!("[DEBUG] Direct execution finished successfully");
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("✗ Interpreter execution failed: {}", e);
+                        eprintln!("  This usually indicates a runtime error in your code");
+                        std::process::exit(1);
+                    }
+                }
+            });
         }
     }
+
+    // Print total execution time if debug mode is enabled
+    timer.print_total("execution");
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn render_encoded(val: u64) -> String {
     if val == 0 {
         return "null".to_string();
@@ -688,6 +803,7 @@ fn render_encoded(val: u64) -> String {
     format!("0x{:x}", val)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod cli_tests {
     use super::*;
@@ -750,6 +866,7 @@ mod cli_tests {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn find_or_build_arm64vm() -> Result<Command, String> {
     let current_exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let exe_dir = current_exe
@@ -793,4 +910,11 @@ fn find_or_build_arm64vm() -> Result<Command, String> {
 
     // Final fallback: PATH
     Ok(Command::new("arm64vm"))
+}
+
+// WebAssembly main function (does nothing since we use exported functions)
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    // WebAssembly builds use the exported functions in wasm.rs
+    // This main function is just to satisfy the compiler
 }

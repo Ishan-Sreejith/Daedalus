@@ -1,6 +1,7 @@
 //! Symbol Table - Tracks variables, functions, and types across compilation
 //!
 //! Provides efficient lookup and management of symbols during JIT compilation
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 

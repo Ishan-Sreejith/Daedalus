@@ -1,6 +1,7 @@
 //! Phase 6: Control Flow (Branching)
 //!
 //! Provides conditional and unconditional branch instructions with label patching.
+#![allow(dead_code)]
 
 use crate::jit::encoder::Reg;
 use std::collections::HashMap;

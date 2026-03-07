@@ -3,6 +3,7 @@
 //! Scaffolding for speculative guards, PIC, OSR, tiered compilation, and escape analysis.
 //! This module provides data structures and minimal logic that can be wired into
 //! the JIT compiler once runtime type tags and profiling hooks are finalized.
+#![allow(dead_code)]
 
 use std::collections::{HashMap, HashSet};
 

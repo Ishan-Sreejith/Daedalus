@@ -2,6 +2,7 @@
 //!
 //! Generates precise stack metadata that tells the GC where pointers live
 //! in registers and on the stack during JIT code execution.
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 

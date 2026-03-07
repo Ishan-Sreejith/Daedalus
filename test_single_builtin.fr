@@ -1,0 +1,2 @@
+var result: abs(-5)
+say: result

@@ -206,10 +206,15 @@ fn handle_command(vm: &mut VM, cmd: &str) -> Result<bool, String> {
                     if vm.pc as usize >= vm.program.len() {
                         println!("{} Program finished", "✓".bright_green());
                     } else {
+                        let instr = vm
+                            .program
+                            .get(vm.pc as usize)
+                            .map(|i| i.to_string())
+                            .unwrap_or_default();
                         println!("{} PC: {} | {}", 
                             "→".bright_yellow(), 
                             vm.pc, 
-                            vm.program.get(vm.pc as usize).unwrap_or(&"".to_string()));
+                            instr);
                     }
                 }
                 Err(e) => return Err(e),
@@ -225,10 +230,11 @@ fn handle_command(vm: &mut VM, cmd: &str) -> Result<bool, String> {
         "prog" | "p" => {
             println!("\n{}", "=== Program ===".bright_cyan());
             for (i, instr) in vm.program.iter().enumerate() {
+                let text = instr.to_string();
                 if i == vm.pc as usize {
-                    println!("{} {:3}: {}", "→".bright_yellow(), i, instr.bright_white());
+                    println!("{} {:3}: {}", "→".bright_yellow(), i, text.bright_white());
                 } else {
-                    println!("  {:3}: {}", i, instr.bright_black());
+                    println!("  {:3}: {}", i, text.bright_black());
                 }
             }
             println!("{}\n", "===============".bright_cyan());
@@ -236,7 +242,7 @@ fn handle_command(vm: &mut VM, cmd: &str) -> Result<bool, String> {
         "exec" | "e" => {
             // Execute a single instruction directly
             let instr = parts[1..].join(" ");
-            vm.program.push(instr.clone());
+            vm.append_instruction(&instr)?;
             vm.pc = vm.program.len() as i64 - 1;
             match vm.step() {
                 Ok(_) => println!("{} Executed: {}", "✓".bright_green(), instr),
@@ -252,7 +258,7 @@ fn handle_command(vm: &mut VM, cmd: &str) -> Result<bool, String> {
         }
         _ => {
             // Try to execute as assembly instruction
-            vm.program.push(cmd.to_string());
+            vm.append_instruction(cmd)?;
             vm.pc = vm.program.len() as i64 - 1;
             match vm.step() {
                 Ok(_) => println!("{} Executed", "✓".bright_green()),

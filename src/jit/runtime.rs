@@ -32,6 +32,7 @@ type GcPtr = *const RefCell<GcData>;
 // to pass these values to `rt_push_try`.
 
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 pub struct ExceptionHandler {
     pub sp: u64,
     pub fp: u64,
@@ -55,6 +56,7 @@ fn encode_int(val: i64) -> EncodedValue {
     ((val as u64) << 1) | TAG_INT
 }
 
+#[allow(dead_code)]
 fn ptr_to_rc(ptr: EncodedValue) -> Rc<RefCell<GcData>> {
     unsafe { Rc::from_raw(ptr as GcPtr) }
 }
@@ -77,6 +79,37 @@ fn get_string(val: EncodedValue) -> String {
                 GcData::String(s) => s.clone(),
                 GcData::Float(f) => f.to_string(),
                 _ => format!("{:?}", borrow),
+            }
+        };
+        let _ = Rc::into_raw(rc);
+        s
+    }
+}
+
+fn format_value(val: EncodedValue) -> String {
+    if is_int(val) {
+        decode_int(val).to_string()
+    } else {
+        if val == 0 {
+            return "null".to_string();
+        }
+        let rc = unsafe { Rc::from_raw(val as GcPtr) };
+        let s = {
+            let borrow = rc.borrow();
+            match &*borrow {
+                GcData::String(s) => format!("\"{}\"", s),
+                GcData::Float(f) => f.to_string(),
+                GcData::List(l) => {
+                    let items: Vec<String> = l.iter().map(|&item| format_value(item)).collect();
+                    format!("[{}]", items.join(", "))
+                }
+                GcData::Map(m) => {
+                    let pairs: Vec<String> = m.iter()
+                        .map(|(k, &v)| format!("\"{}\": {}", k, format_value(v)))
+                        .collect();
+                    format!("{{{}}}", pairs.join(", "))
+                }
+                GcData::File(_) => "<File>".to_string(),
             }
         };
         let _ = Rc::into_raw(rc);
@@ -270,8 +303,28 @@ pub extern "C" fn rt_print(val: EncodedValue) {
         match rc.try_borrow() {
             Ok(borrow) => match &*borrow {
                 GcData::String(s) => println!("{}", s),
-                GcData::List(l) => println!("<List len={}>", l.len()),
-                GcData::Map(m) => println!("<Map size={}>", m.len()),
+                GcData::List(l) => {
+                    print!("[");
+                    for (i, item) in l.iter().enumerate() {
+                        if i > 0 {
+                            print!(", ");
+                        }
+                        print!("{}", format_value(*item));
+                    }
+                    println!("]");
+                }
+                GcData::Map(m) => {
+                    print!("{{");
+                    let mut first = true;
+                    for (key, value) in m {
+                        if !first {
+                            print!(", ");
+                        }
+                        first = false;
+                        print!("\"{}\": {}", key, format_value(*value));
+                    }
+                    println!("}}");
+                }
                 GcData::Float(f) => println!("{}", f),
                 GcData::File(_) => println!("<File>"),
             },
@@ -375,6 +428,47 @@ pub extern "C" fn rt_float_div(a: EncodedValue, b: EncodedValue) -> EncodedValue
     rt_alloc_float(get_float(a) / fb)
 }
 
+#[no_mangle]
+pub extern "C" fn rt_abs(v: EncodedValue) -> EncodedValue {
+    if is_int(v) {
+        return encode_int(decode_int(v).abs());
+    }
+    rt_alloc_float(get_float(v).abs())
+}
+
+#[no_mangle]
+pub extern "C" fn rt_min(a: EncodedValue, b: EncodedValue) -> EncodedValue {
+    if is_int(a) && is_int(b) {
+        return encode_int(decode_int(a).min(decode_int(b)));
+    }
+    rt_alloc_float(get_float(a).min(get_float(b)))
+}
+
+#[no_mangle]
+pub extern "C" fn rt_max(a: EncodedValue, b: EncodedValue) -> EncodedValue {
+    if is_int(a) && is_int(b) {
+        return encode_int(decode_int(a).max(decode_int(b)));
+    }
+    rt_alloc_float(get_float(a).max(get_float(b)))
+}
+
+#[no_mangle]
+pub extern "C" fn rt_sqrt(v: EncodedValue) -> EncodedValue {
+    rt_alloc_float(get_float(v).sqrt())
+}
+
+#[no_mangle]
+pub extern "C" fn rt_pow(a: EncodedValue, b: EncodedValue) -> EncodedValue {
+    rt_alloc_float(get_float(a).powf(get_float(b)))
+}
+
+#[no_mangle]
+pub extern "C" fn rt_contains(haystack: EncodedValue, needle: EncodedValue) -> EncodedValue {
+    let h = get_string(haystack);
+    let n = get_string(needle);
+    encode_int(if h.contains(&n) { 1 } else { 0 })
+}
+
 // --- List Ops ---
 
 #[no_mangle]
@@ -464,6 +558,24 @@ pub extern "C" fn rt_list_len(list_ptr: EncodedValue) -> EncodedValue {
     };
     let _ = Rc::into_raw(rc);
     encode_int(len)
+}
+
+#[no_mangle]
+pub extern "C" fn rt_list_pop(list_ptr: EncodedValue) -> EncodedValue {
+    if is_int(list_ptr) || list_ptr == 0 {
+        return encode_int(0);
+    }
+    let rc = unsafe { Rc::from_raw(list_ptr as GcPtr) };
+    let res = {
+        let mut borrow = rc.borrow_mut();
+        if let GcData::List(list) = &mut *borrow {
+            list.pop().unwrap_or_else(|| encode_int(0))
+        } else {
+            encode_int(0)
+        }
+    };
+    let _ = Rc::into_raw(rc);
+    res
 }
 
 // --- Map Ops ---
@@ -557,6 +669,30 @@ pub extern "C" fn rt_map_keys(map_ptr: EncodedValue) -> EncodedValue {
     rc_to_ptr(list_rc)
 }
 
+#[no_mangle]
+pub extern "C" fn rt_map_values(map_ptr: EncodedValue) -> EncodedValue {
+    if is_int(map_ptr) || map_ptr == 0 {
+        return rt_alloc_list(0);
+    }
+
+    let rc = unsafe { Rc::from_raw(map_ptr as GcPtr) };
+    let list_rc = {
+        let borrow = rc.borrow();
+        if let GcData::Map(map) = &*borrow {
+            let mut vals = Vec::with_capacity(map.len());
+            for &v in map.values() {
+                rt_retain(v);
+                vals.push(v);
+            }
+            Rc::new(RefCell::new(GcData::List(vals)))
+        } else {
+            Rc::new(RefCell::new(GcData::List(vec![])))
+        }
+    };
+    let _ = Rc::into_raw(rc);
+    rc_to_ptr(list_rc)
+}
+
 // --- Generic indexing ---
 
 #[no_mangle]
@@ -579,6 +715,42 @@ pub extern "C" fn rt_index_get(container: EncodedValue, key: EncodedValue) -> En
         1 => rt_map_get(container, key),
         _ => encode_int(0),
     }
+}
+
+#[no_mangle]
+pub extern "C" fn rt_index_set(container: EncodedValue, key: EncodedValue, value: EncodedValue) {
+    if is_int(container) || container == 0 {
+        return;
+    }
+    let rc = unsafe { Rc::from_raw(container as GcPtr) };
+    let kind = {
+        let borrow = rc.borrow();
+        match &*borrow {
+            GcData::List(_) => 0,
+            GcData::Map(_) => 1,
+            _ => 2,
+        }
+    };
+    let _ = Rc::into_raw(rc);
+    match kind {
+        0 => rt_list_set(container, key, value),
+        1 => rt_map_set(container, key, value),
+        _ => {}
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn rt_range(start: EncodedValue, end: EncodedValue) -> EncodedValue {
+    let start_i = if is_int(start) { decode_int(start) } else { 0 };
+    let end_i = if is_int(end) { decode_int(end) } else { 0 };
+    let len = (end_i - start_i).max(0) as usize;
+    let mut vals = Vec::with_capacity(len);
+    let mut cur = start_i;
+    while cur < end_i {
+        vals.push(encode_int(cur));
+        cur += 1;
+    }
+    rc_to_ptr(Rc::new(RefCell::new(GcData::List(vals))))
 }
 
 // --- File I/O ---
@@ -688,4 +860,45 @@ pub extern "C" fn rt_throw(val: EncodedValue) -> u64 {
 #[no_mangle]
 pub extern "C" fn rt_get_last_error() -> EncodedValue {
     LAST_ERROR.with(|last| *last.borrow())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rt_abs_int() {
+        let v = encode_int(-42);
+        let out = rt_abs(v);
+        assert!(is_int(out));
+        assert_eq!(decode_int(out), 42);
+    }
+
+    #[test]
+    fn test_rt_min_max_int() {
+        let a = encode_int(5);
+        let b = encode_int(9);
+        assert_eq!(decode_int(rt_min(a, b)), 5);
+        assert_eq!(decode_int(rt_max(a, b)), 9);
+    }
+
+    #[test]
+    fn test_rt_contains_string() {
+        let h = rt_alloc_string("hello world".as_ptr(), 11);
+        let n = rt_alloc_string("world".as_ptr(), 5);
+        let out = rt_contains(h, n);
+        assert_eq!(decode_int(out), 1);
+        rt_release(h);
+        rt_release(n);
+    }
+
+    #[test]
+    fn test_rt_range_and_pop() {
+        let list = rt_range(encode_int(2), encode_int(5)); // [2,3,4]
+        assert_eq!(decode_int(rt_list_len(list)), 3);
+        let popped = rt_list_pop(list);
+        assert_eq!(decode_int(popped), 4);
+        assert_eq!(decode_int(rt_list_len(list)), 2);
+        rt_release(list);
+    }
 }

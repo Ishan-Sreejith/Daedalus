@@ -1,6 +1,6 @@
 use crate::ir::*;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 pub struct DirectExecutor {
     variables: HashMap<String, Value>,
     functions: HashMap<String, IrFunction>,
+    output: Vec<String>,
 }
 
 struct FrameState {
@@ -28,7 +29,6 @@ enum TaskStatus {
 }
 
 struct TaskState {
-    id: u64,
     vars: HashMap<String, Value>,
     frames: Vec<FrameState>,
     status: TaskStatus,
@@ -52,7 +52,23 @@ impl DirectExecutor {
         DirectExecutor {
             variables: HashMap::new(),
             functions: HashMap::new(),
+            output: Vec::new(),
         }
+    }
+
+    fn enqueue_runnable(
+        runnable: &mut std::collections::VecDeque<u64>,
+        set: &mut HashSet<u64>,
+        id: u64,
+    ) {
+        if set.insert(id) {
+            runnable.push_back(id);
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn take_output(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.output)
     }
 
     pub fn execute(&mut self, program: &IrProgram) -> Result<(), String> {
@@ -83,6 +99,7 @@ impl DirectExecutor {
         let mut next_task_id: u64 = 1;
         let mut tasks: HashMap<u64, TaskState> = HashMap::new();
         let mut runnable: VecDeque<u64> = VecDeque::new();
+        let mut runnable_set: HashSet<u64> = HashSet::new();
 
         let main_frame = FrameState {
             instructions: global_code.to_vec(),
@@ -95,16 +112,16 @@ impl DirectExecutor {
         tasks.insert(
             0,
             TaskState {
-                id: 0,
                 vars: HashMap::new(),
                 frames: vec![main_frame],
                 status: TaskStatus::Running,
                 result: None,
             },
         );
-        runnable.push_back(0);
+        Self::enqueue_runnable(&mut runnable, &mut runnable_set, 0);
 
         while let Some(task_id) = runnable.pop_front() {
+            runnable_set.remove(&task_id);
             // Wake sleeping tasks that are ready.
             let now = Instant::now();
             for t in tasks.values_mut() {
@@ -148,9 +165,7 @@ impl DirectExecutor {
                     }
                 }
                 for id in to_wake {
-                    if !runnable.contains(&id) {
-                        runnable.push_back(id);
-                    }
+                    Self::enqueue_runnable(&mut runnable, &mut runnable_set, id);
                 }
             }
 
@@ -171,7 +186,7 @@ impl DirectExecutor {
                 None => false,
             };
             if should_requeue {
-                runnable.push_back(task_id);
+                Self::enqueue_runnable(&mut runnable, &mut runnable_set, task_id);
             }
 
             // Ensure other running tasks are in the queue.
@@ -179,8 +194,8 @@ impl DirectExecutor {
                 if *id == task_id {
                     continue;
                 }
-                if matches!(t.status, TaskStatus::Running) && !runnable.contains(id) {
-                    runnable.push_back(*id);
+                if matches!(t.status, TaskStatus::Running) {
+                    Self::enqueue_runnable(&mut runnable, &mut runnable_set, *id);
                 }
             }
 
@@ -208,8 +223,8 @@ impl DirectExecutor {
                         }
                     }
                     for (id, t) in tasks.iter() {
-                        if matches!(t.status, TaskStatus::Running) && !runnable.contains(id) {
-                            runnable.push_back(*id);
+                        if matches!(t.status, TaskStatus::Running) {
+                            Self::enqueue_runnable(&mut runnable, &mut runnable_set, *id);
                         }
                     }
                 } else {
@@ -429,19 +444,18 @@ impl DirectExecutor {
 
                 // Builtin function calls (pure)
                 if [
-                    "len",
-                    "keys",
-                    "values",
-                    "range",
-                    "open",
-                    "close",
-                    "type",
-                    "is_map",
-                    "is_list",
-                    "is_string",
-                    "str",
-                    "num",
-                    "bool",
+                    // Collection functions
+                    "len", "keys", "values", "range", "push", "pop", "sort", "filter", "map",
+                    // Math functions  
+                    "abs", "min", "max", "pow", "sqrt", "floor", "ceil", "round",
+                    // String functions
+                    "split", "join", "substring", "toupper", "tolower", "trim", "contains",
+                    // Type conversion and checking
+                    "str", "num", "bool", "type", "is_map", "is_list", "is_string",
+                    // I/O functions
+                    "print", "println",
+                    // Legacy functions
+                    "open", "close",
                 ]
                 .contains(&func.as_str())
                 {
@@ -557,7 +571,6 @@ impl DirectExecutor {
         tasks.insert(
             id,
             TaskState {
-                id,
                 vars,
                 frames: vec![frame],
                 status: TaskStatus::Running,
@@ -588,8 +601,9 @@ impl DirectExecutor {
         Ok(())
     }
 
-    fn eval_builtin(&self, func: &str, arg_vals: &[Value]) -> Result<Value, String> {
+    fn eval_builtin(&mut self, func: &str, arg_vals: &[Value]) -> Result<Value, String> {
         match func {
+            // Collection functions
             "len" if arg_vals.len() == 1 => match &arg_vals[0] {
                 Value::String(s) => Ok(Value::Number(s.len() as f64)),
                 Value::List(l) => Ok(Value::Number(l.borrow().len() as f64)),
@@ -598,12 +612,12 @@ impl DirectExecutor {
             },
             "keys" if arg_vals.len() == 1 => {
                 if let Value::Map(m) = &arg_vals[0] {
-                    Ok(Value::List(Rc::new(RefCell::new(
-                        m.borrow()
-                            .keys()
-                            .map(|k| Value::String(k.clone()))
-                            .collect(),
-                    ))))
+                    let mut keys: Vec<Value> = m.borrow()
+                        .keys()
+                        .map(|k| Value::String(k.clone()))
+                        .collect();
+                    keys.sort_by(|a, b| self.value_to_string(a).cmp(&self.value_to_string(b)));
+                    Ok(Value::List(Rc::new(RefCell::new(keys))))
                 } else {
                     Err("keys() expects map".to_string())
                 }
@@ -630,6 +644,156 @@ impl DirectExecutor {
                     Err("range() expects two numbers".to_string())
                 }
             }
+            "push" if arg_vals.len() == 2 => {
+                if let Value::List(l) = &arg_vals[0] {
+                    l.borrow_mut().push(arg_vals[1].clone());
+                    Ok(Value::Number(l.borrow().len() as f64))
+                } else {
+                    Err("push() expects list as first argument".to_string())
+                }
+            }
+            "pop" if arg_vals.len() == 1 => {
+                if let Value::List(l) = &arg_vals[0] {
+                    Ok(l.borrow_mut().pop().unwrap_or(Value::Number(0.0)))
+                } else {
+                    Err("pop() expects list".to_string())
+                }
+            }
+            "sort" if arg_vals.len() == 1 => {
+                if let Value::List(l) = &arg_vals[0] {
+                    let mut items = l.borrow().clone();
+                    items.sort_by(|a, b| self.value_to_string(a).cmp(&self.value_to_string(b)));
+                    Ok(Value::List(Rc::new(RefCell::new(items))))
+                } else {
+                    Err("sort() expects list".to_string())
+                }
+            }
+
+            // Math functions
+            "abs" if arg_vals.len() == 1 => {
+                if let Value::Number(n) = &arg_vals[0] {
+                    Ok(Value::Number(n.abs()))
+                } else {
+                    Err("abs() expects number".to_string())
+                }
+            }
+            "min" if arg_vals.len() == 2 => {
+                if let (Value::Number(a), Value::Number(b)) = (&arg_vals[0], &arg_vals[1]) {
+                    Ok(Value::Number(a.min(*b)))
+                } else {
+                    Err("min() expects two numbers".to_string())
+                }
+            }
+            "max" if arg_vals.len() == 2 => {
+                if let (Value::Number(a), Value::Number(b)) = (&arg_vals[0], &arg_vals[1]) {
+                    Ok(Value::Number(a.max(*b)))
+                } else {
+                    Err("max() expects two numbers".to_string())
+                }
+            }
+            "pow" if arg_vals.len() == 2 => {
+                if let (Value::Number(base), Value::Number(exp)) = (&arg_vals[0], &arg_vals[1]) {
+                    Ok(Value::Number(base.powf(*exp)))
+                } else {
+                    Err("pow() expects two numbers".to_string())
+                }
+            }
+            "sqrt" if arg_vals.len() == 1 => {
+                if let Value::Number(n) = &arg_vals[0] {
+                    Ok(Value::Number(n.sqrt()))
+                } else {
+                    Err("sqrt() expects number".to_string())
+                }
+            }
+            "floor" if arg_vals.len() == 1 => {
+                if let Value::Number(n) = &arg_vals[0] {
+                    Ok(Value::Number(n.floor()))
+                } else {
+                    Err("floor() expects number".to_string())
+                }
+            }
+            "ceil" if arg_vals.len() == 1 => {
+                if let Value::Number(n) = &arg_vals[0] {
+                    Ok(Value::Number(n.ceil()))
+                } else {
+                    Err("ceil() expects number".to_string())
+                }
+            }
+            "round" if arg_vals.len() == 1 => {
+                if let Value::Number(n) = &arg_vals[0] {
+                    Ok(Value::Number(n.round()))
+                } else {
+                    Err("round() expects number".to_string())
+                }
+            }
+
+            // String functions
+            "split" if arg_vals.len() == 2 => {
+                if let (Value::String(s), Value::String(delim)) = (&arg_vals[0], &arg_vals[1]) {
+                    let parts: Vec<Value> = s.split(delim)
+                        .map(|part| Value::String(part.to_string()))
+                        .collect();
+                    Ok(Value::List(Rc::new(RefCell::new(parts))))
+                } else {
+                    Err("split() expects two strings".to_string())
+                }
+            }
+            "join" if arg_vals.len() == 2 => {
+                if let (Value::List(l), Value::String(delim)) = (&arg_vals[0], &arg_vals[1]) {
+                    let parts: Vec<String> = l.borrow()
+                        .iter()
+                        .map(|v| self.value_to_string(v))
+                        .collect();
+                    Ok(Value::String(parts.join(delim)))
+                } else {
+                    Err("join() expects list and string".to_string())
+                }
+            }
+            "substring" if arg_vals.len() == 3 => {
+                if let (Value::String(s), Value::Number(start), Value::Number(length)) = (&arg_vals[0], &arg_vals[1], &arg_vals[2]) {
+                    let start = *start as usize;
+                    let length = *length as usize;
+                    let chars: Vec<char> = s.chars().collect();
+                    if start >= chars.len() {
+                        return Ok(Value::String("".to_string()));
+                    }
+                    let end = std::cmp::min(start + length, chars.len());
+                    let substr: String = chars[start..end].iter().collect();
+                    Ok(Value::String(substr))
+                } else {
+                    Err("substring() expects string, number, number".to_string())
+                }
+            }
+            "toupper" if arg_vals.len() == 1 => {
+                if let Value::String(s) = &arg_vals[0] {
+                    Ok(Value::String(s.to_uppercase()))
+                } else {
+                    Err("toupper() expects string".to_string())
+                }
+            }
+            "tolower" if arg_vals.len() == 1 => {
+                if let Value::String(s) = &arg_vals[0] {
+                    Ok(Value::String(s.to_lowercase()))
+                } else {
+                    Err("tolower() expects string".to_string())
+                }
+            }
+            "trim" if arg_vals.len() == 1 => {
+                if let Value::String(s) = &arg_vals[0] {
+                    Ok(Value::String(s.trim().to_string()))
+                } else {
+                    Err("trim() expects string".to_string())
+                }
+            }
+            "contains" if arg_vals.len() == 2 => {
+                if let (Value::String(s), Value::String(needle)) = (&arg_vals[0], &arg_vals[1]) {
+                    Ok(Value::Bool(s.contains(needle)))
+                } else {
+                    Err("contains() expects two strings".to_string())
+                }
+            }
+
+            // Type functions
             "type" if arg_vals.len() == 1 => {
                 let t = match &arg_vals[0] {
                     Value::Number(_) => "number",
@@ -664,6 +828,8 @@ impl DirectExecutor {
                     0.0
                 }))
             }
+
+            // Type conversion
             "str" if arg_vals.len() == 1 => Ok(Value::String(self.value_to_string(&arg_vals[0]))),
             "num" if arg_vals.len() == 1 => match &arg_vals[0] {
                 Value::Number(n) => Ok(Value::Number(*n)),
@@ -689,12 +855,33 @@ impl DirectExecutor {
                 };
                 Ok(Value::Bool(b))
             }
+
+            // I/O functions
+            "print" if arg_vals.len() == 1 => {
+                let line = self.value_to_string(&arg_vals[0]);
+                self.output.push(line.clone());
+                print!("{}", line);
+                Ok(Value::Number(0.0))
+            }
+            "println" if arg_vals.len() == 1 => {
+                let line = self.value_to_string(&arg_vals[0]);
+                self.output.push(line.clone());
+                println!("{}", line);
+                Ok(Value::Number(0.0))
+            }
+
+            // Legacy functions
             "open" if arg_vals.len() == 1 => Ok(Value::String("FILE_HANDLE".to_string())),
             "close" if arg_vals.len() == 1 => Ok(Value::Bool(true)),
+            
+            // Not yet implemented
+            "filter" | "map" => Err("filter and map functions not yet implemented".to_string()),
+
             _ => Err(format!("Invalid native function call: {}", func)),
         }
     }
 
+    #[allow(dead_code)]
     fn execute_instructions(&mut self, instructions: &[IrInstr]) -> Result<Option<Value>, String> {
         // First pass: scanning labels
         let mut labels = HashMap::new();
@@ -746,19 +933,18 @@ impl DirectExecutor {
                 }
                 IrInstr::Call { dest, func, args }
                     if [
-                        "len",
-                        "keys",
-                        "values",
-                        "range",
-                        "open",
-                        "close",
-                        "type",
-                        "is_map",
-                        "is_list",
-                        "is_string",
-                        "str",
-                        "num",
-                        "bool",
+                        // Collection functions
+                        "len", "keys", "values", "range", "push", "pop", "sort", "filter", "map",
+                        // Math functions  
+                        "abs", "min", "max", "pow", "sqrt", "floor", "ceil", "round",
+                        // String functions
+                        "split", "join", "substring", "toupper", "tolower", "trim", "contains",
+                        // Type conversion and checking
+                        "str", "num", "bool", "type", "is_map", "is_list", "is_string",
+                        // I/O functions
+                        "print", "println",
+                        // Legacy functions
+                        "open", "close",
                     ]
                     .contains(&func.as_str()) =>
                 {
@@ -934,13 +1120,15 @@ impl DirectExecutor {
             }
             IrInstr::Print { src } => {
                 let val = self.get_var(src)?;
-                self.print_value(&val);
-                println!();
+                let line = self.value_to_string(&val);
+                self.output.push(line.clone());
+                println!("{}", line);
             }
             IrInstr::PrintNum { src } => {
                 let val = self.get_var(src)?;
-                self.print_value(&val);
-                println!();
+                let line = self.value_to_string(&val);
+                self.output.push(line.clone());
+                println!("{}", line);
             }
             IrInstr::Input { dest, prompt } => {
                 let prompt_str = if let Ok(val) = self.get_var(prompt) {
@@ -1174,60 +1362,6 @@ impl DirectExecutor {
         Ok(())
     }
 
-    fn print_value(&self, val: &Value) {
-        match val {
-            Value::Number(n) => print!("{}", n),
-            Value::String(s) => print!("{}", s),
-            Value::Bool(b) => print!("{}", b),
-            Value::List(items_ref) => {
-                let items = items_ref.borrow();
-                print!("[");
-                for (i, item) in items.iter().enumerate() {
-                    if i > 0 {
-                        print!(", ");
-                    }
-                    self.print_value(item);
-                }
-                print!("]");
-            }
-            Value::Map(map_ref) => {
-                let map = map_ref.borrow();
-                print!("{{");
-                for (i, (k, v)) in map.iter().enumerate() {
-                    if i > 0 {
-                        print!(", ");
-                    }
-                    print!("\"{}\": ", k);
-                    self.print_value(v);
-                }
-                print!("}}");
-            }
-            Value::Struct(name, fields_ref) => {
-                let fields = fields_ref.borrow();
-                print!("{} {{", name);
-                for (i, (k, v)) in fields.iter().enumerate() {
-                    if i > 0 {
-                        print!(", ");
-                    }
-                    print!("{}: ", k);
-                    self.print_value(v);
-                }
-                print!("}}");
-            }
-            Value::Task(id) => {
-                print!("<task {}>", id);
-            }
-            Value::TaskThunk { func, args } => {
-                let arg_s = args
-                    .iter()
-                    .map(|v| self.value_to_string(v))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                print!("<thunk {}({})>", func, arg_s);
-            }
-        }
-    }
-
     fn value_to_string(&self, val: &Value) -> String {
         match val {
             Value::Number(n) => n.to_string(),
@@ -1356,5 +1490,36 @@ var r: await t
         );
 
         assert_eq!(ex.variables.get("r"), Some(&Value::Number(30.0)));
+    }
+
+    #[test]
+    fn builtin_range_push_pop_and_len_work() {
+        let ex = exec_source(
+            r#"
+var xs: range: 1, 4
+var n1: len: xs
+var n2: push: xs, 9
+var last: pop: xs
+"#,
+        );
+
+        assert_eq!(ex.variables.get("n1"), Some(&Value::Number(3.0)));
+        assert_eq!(ex.variables.get("n2"), Some(&Value::Number(4.0)));
+        assert_eq!(ex.variables.get("last"), Some(&Value::Number(9.0)));
+    }
+
+    #[test]
+    fn builtin_pow_sqrt_contains_work() {
+        let ex = exec_source(
+            r#"
+var p: pow: 2, 5
+var s: sqrt: 81
+var c: contains: "forge compiler", "comp"
+"#,
+        );
+
+        assert_eq!(ex.variables.get("p"), Some(&Value::Number(32.0)));
+        assert_eq!(ex.variables.get("s"), Some(&Value::Number(9.0)));
+        assert_eq!(ex.variables.get("c"), Some(&Value::Bool(true)));
     }
 }

@@ -1,6 +1,7 @@
 //! Phase 5 & 4: Register Allocation & Spilling
 //!
 //! Manages the mapping of variables to physical registers (x0-x7) or stack slots.
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 

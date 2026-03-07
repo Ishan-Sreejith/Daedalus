@@ -1,6 +1,7 @@
 //! Phase 10: Optimization Passes
 //!
 //! Peephole optimizations and register allocation improvements for better JIT performance.
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 

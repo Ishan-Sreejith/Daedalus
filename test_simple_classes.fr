@@ -1,0 +1,10 @@
+say: "=== Testing Classes ==="
+
+cl Point { x, y }
+clg Node { id, data }
+clc Fast { value }
+class Full { name }
+
+say: "Classes defined"
+
+say: "=== Done ==="

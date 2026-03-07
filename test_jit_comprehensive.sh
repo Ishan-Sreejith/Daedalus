@@ -35,6 +35,7 @@ run_test() {
     fi
 
     output_full=$(./target/release/fforge "$file" 2>&1)
+    status=$?
     output_tail=$(echo "$output_full" | tail -10)
     printed=$(echo "$output_full" | sed '/^\\[DEBUG\\]/d;/^→/d;/^✓/d;/^Finished/d' | sed '/^$/d')
 
@@ -51,13 +52,14 @@ run_test() {
     fi
 
     if [ -z "$should_fail" ]; then
-        if echo "$output_full" | grep -q "✓" && [ $expected_ok -eq 1 ]; then
+        if [ $status -eq 0 ] && [ $expected_ok -eq 1 ]; then
             echo -e "${GREEN}✓ PASS${NC}"
             ((PASSED++))
         else
             echo -e "${RED}✗ FAIL${NC}"
             echo "Output (tail):"
             echo "$output_tail"
+            echo "Exit status: $status"
             if [ $expected_ok -ne 1 ]; then
                 echo "Expected lines:"
                 echo "$expected"
@@ -67,7 +69,7 @@ run_test() {
             ((FAILED++))
         fi
     else
-        if echo "$output_full" | grep -q "Error\\|error"; then
+        if [ $status -ne 0 ]; then
             echo -e "${YELLOW}⚠ EXPECTED FAIL${NC}"
             ((SKIPPED++))
         else

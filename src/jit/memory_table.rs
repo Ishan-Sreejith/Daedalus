@@ -1,6 +1,7 @@
 //! Memory Table - Tracks heap allocations and lifetimes for GC integration
 //!
 //! Manages memory allocation metadata for JIT-compiled code
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 

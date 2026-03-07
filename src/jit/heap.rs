@@ -2,6 +2,7 @@
 //!
 //! Provides support for allocating and managing heap-allocated data
 //! structures like lists and maps in JIT-compiled code.
+#![allow(dead_code)]
 
 use crate::jit::encoder::{encode_mov_imm, Reg};
 
