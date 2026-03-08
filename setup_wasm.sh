@@ -1,16 +1,13 @@
 #!/bin/bash
 
-# CoRe Language WebAssembly Setup Script
 
 echo "🔥 Setting up CoRe Language for WebAssembly deployment..."
 
-# Check if we're in the right directory
 if [ ! -f "Cargo.toml" ]; then
     echo "❌ Error: Please run this script from the CoRe language root directory"
     exit 1
 fi
 
-# Check if Rust and wasm-pack are installed
 if ! command -v rustup &> /dev/null; then
     echo "❌ Rust is not installed. Please install Rust first:"
     echo "   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
@@ -22,11 +19,9 @@ if ! command -v wasm-pack &> /dev/null; then
     cargo install wasm-pack
 fi
 
-# Add WebAssembly target if not already added
 echo "🎯 Adding WebAssembly target..."
 rustup target add wasm32-unknown-unknown
 
-# Build the WebAssembly package
 echo "🏗️  Building WebAssembly package..."
 wasm-pack build --target web --features wasm --no-default-features
 

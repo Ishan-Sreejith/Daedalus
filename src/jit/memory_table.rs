@@ -1,6 +1,3 @@
-//! Memory Table - Tracks heap allocations and lifetimes for GC integration
-//!
-//! Manages memory allocation metadata for JIT-compiled code
 #![allow(dead_code)]
 
 use std::collections::HashMap;
@@ -28,13 +25,10 @@ pub struct MemoryTable {
     allocations: HashMap<u64, Allocation>,
     next_id: u64,
 
-    // Stack frame tracking
     stack_frames: Vec<StackFrame>,
 
-    // GC roots
     roots: Vec<u64>,
 
-    // Instruction counter for allocation tracking
     instruction_counter: u64,
 }
 
@@ -71,7 +65,6 @@ impl MemoryTable {
 
         self.allocations.insert(id, allocation);
 
-        // Add to current stack frame if exists
         if let Some(frame) = self.stack_frames.last_mut() {
             frame.local_allocations.push(id);
         }
@@ -131,7 +124,6 @@ impl MemoryTable {
         self.allocations.get(&id)
     }
 
-    // Collect garbage (allocations with 0 references and not roots)
     pub fn collect_garbage(&mut self) -> Vec<u64> {
         let mut collected = Vec::new();
 
@@ -147,7 +139,6 @@ impl MemoryTable {
         collected
     }
 
-    // Get allocation statistics
     pub fn stats(&self) -> MemoryStats {
         let total_allocations = self.allocations.len();
         let total_size: usize = self.allocations.values().map(|a| a.size).sum();
@@ -162,7 +153,6 @@ impl MemoryTable {
         }
     }
 
-    // Mark all allocations reachable from roots (for mark-sweep GC)
     pub fn mark_reachable(&mut self) {
         let root_ids: Vec<u64> = self.roots.iter().copied().collect();
         for root_id in root_ids {
@@ -174,12 +164,10 @@ impl MemoryTable {
         if let Some(alloc) = self.allocations.get_mut(&id) {
             if !alloc.is_live {
                 alloc.is_live = true;
-                // Would traverse references to other allocations here
             }
         }
     }
 
-    // Sweep unmarked allocations
     pub fn sweep(&mut self) -> Vec<u64> {
         let mut swept = Vec::new();
 

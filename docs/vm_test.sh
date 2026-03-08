@@ -1,5 +1,4 @@
 #!/bin/bash
-# End-to-end VM Test Script
 
 FR_FILE=$1
 if [ -z "$FR_FILE" ]; then

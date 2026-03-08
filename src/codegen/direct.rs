@@ -72,12 +72,10 @@ impl DirectExecutor {
     }
 
     pub fn execute(&mut self, program: &IrProgram) -> Result<(), String> {
-        // Load functions
         for (name, func) in &program.functions {
             self.functions.insert(name.clone(), func.clone());
         }
 
-        // Execute global code (task scheduler; supports async/await + spawn + sleep)
         self.execute_with_scheduler(&program.global_code)?;
 
         Ok(())
@@ -122,7 +120,6 @@ impl DirectExecutor {
 
         while let Some(task_id) = runnable.pop_front() {
             runnable_set.remove(&task_id);
-            // Wake sleeping tasks that are ready.
             let now = Instant::now();
             for t in tasks.values_mut() {
                 if let TaskStatus::Sleeping(until) = &t.status {
@@ -155,7 +152,6 @@ impl DirectExecutor {
             tasks.insert(task_id, task);
             let outcome = step_res?;
 
-            // If a task completed (or failed), wake any tasks waiting on it.
             if matches!(outcome, TaskStatus::Done | TaskStatus::Error(_)) {
                 let mut to_wake = Vec::new();
                 for (id, t) in tasks.iter_mut() {
@@ -169,7 +165,6 @@ impl DirectExecutor {
                 }
             }
 
-            // If main finished, stop.
             if task_id == 0 {
                 if matches!(outcome, TaskStatus::Done) {
                     self.variables = tasks.get(&0).map(|t| t.vars.clone()).unwrap_or_default();
@@ -180,7 +175,6 @@ impl DirectExecutor {
                 }
             }
 
-            // Requeue runnable tasks.
             let should_requeue = match tasks.get(&task_id) {
                 Some(t) => matches!(t.status, TaskStatus::Running),
                 None => false,
@@ -189,7 +183,6 @@ impl DirectExecutor {
                 Self::enqueue_runnable(&mut runnable, &mut runnable_set, task_id);
             }
 
-            // Ensure other running tasks are in the queue.
             for (id, t) in tasks.iter() {
                 if *id == task_id {
                     continue;
@@ -199,7 +192,6 @@ impl DirectExecutor {
                 }
             }
 
-            // If nothing runnable, but some are sleeping, wait a bit.
             if runnable.is_empty() {
                 let mut next_wake: Option<Instant> = None;
                 for t in tasks.values() {
@@ -213,7 +205,6 @@ impl DirectExecutor {
                         let d = until.duration_since(now).min(Duration::from_millis(10));
                         std::thread::sleep(d);
                     }
-                    // Wake tasks that are now ready, then refill runnable.
                     let now = Instant::now();
                     for t in tasks.values_mut() {
                         if let TaskStatus::Sleeping(until) = &t.status {
@@ -228,7 +219,6 @@ impl DirectExecutor {
                         }
                     }
                 } else {
-                    // Deadlock: only waiting tasks remain.
                     let waiting: Vec<(u64, u64)> = tasks
                         .iter()
                         .filter_map(|(id, t)| match t.status {
@@ -253,7 +243,6 @@ impl DirectExecutor {
         tasks: &mut HashMap<u64, TaskState>,
         next_task_id: &mut u64,
     ) -> Result<TaskStatus, String> {
-        // If waiting, check if awaited task is done.
         if let TaskStatus::Waiting(wait_id) = task.status {
             if let Some(waited) = tasks.get(&wait_id) {
                 if matches!(waited.status, TaskStatus::Done) {
@@ -269,12 +258,10 @@ impl DirectExecutor {
             }
         }
 
-        // Sleeping tasks are handled by scheduler wakeup.
         if !matches!(task.status, TaskStatus::Running) {
             return Ok(task.status.clone());
         }
 
-        // No frame => done
         if task.frames.is_empty() {
             task.status = TaskStatus::Done;
             return Ok(TaskStatus::Done);
@@ -283,7 +270,6 @@ impl DirectExecutor {
         let frame_idx = task.frames.len() - 1;
         let pc = task.frames[frame_idx].pc;
         if pc >= task.frames[frame_idx].instructions.len() {
-            // Implicit return None
             self.finish_frame(task, None)?;
             return Ok(task.status.clone());
         }
@@ -382,7 +368,6 @@ impl DirectExecutor {
                 }
             }
             IrInstr::Call { dest, func, args } => {
-                // Evaluate arguments now.
                 let mut arg_vals = Vec::new();
                 for a in &args {
                     let v = task
@@ -393,7 +378,6 @@ impl DirectExecutor {
                     arg_vals.push(v);
                 }
 
-                // Builtins that can affect scheduling.
                 match func.as_str() {
                     "spawn" => {
                         if arg_vals.len() != 1 {
@@ -442,19 +426,12 @@ impl DirectExecutor {
                     _ => {}
                 }
 
-                // Builtin function calls (pure)
                 if [
-                    // Collection functions
                     "len", "keys", "values", "range", "push", "pop", "sort", "filter", "map",
-                    // Math functions  
                     "abs", "min", "max", "pow", "sqrt", "floor", "ceil", "round",
-                    // String functions
                     "split", "join", "substring", "toupper", "tolower", "trim", "contains",
-                    // Type conversion and checking
                     "str", "num", "bool", "type", "is_map", "is_list", "is_string",
-                    // I/O functions
                     "print", "println",
-                    // Legacy functions
                     "open", "close",
                 ]
                 .contains(&func.as_str())
@@ -467,14 +444,12 @@ impl DirectExecutor {
                     return Ok(task.status.clone());
                 }
 
-                // User functions
                 let function = self
                     .functions
                     .get(&func)
                     .ok_or_else(|| format!("Unknown function: {}", func))?
                     .clone();
 
-                // Async function call returns a thunk (until spawned/awaited).
                 if function.is_async {
                     let thunk = Value::TaskThunk {
                         func: func.clone(),
@@ -487,7 +462,6 @@ impl DirectExecutor {
                     return Ok(task.status.clone());
                 }
 
-                // Synchronous call: push frame with dynamic-scope snapshot.
                 if function.params.len() != args.len() {
                     return Err(format!(
                         "Function '{}' expects {} args, got {}",
@@ -513,7 +487,6 @@ impl DirectExecutor {
                 });
             }
             other => {
-                // Regular instruction; reuse existing interpreter logic by swapping variables.
                 let mut temp = HashMap::new();
                 std::mem::swap(&mut temp, &mut task.vars);
                 std::mem::swap(&mut temp, &mut self.variables);
@@ -584,17 +557,14 @@ impl DirectExecutor {
     fn finish_frame(&mut self, task: &mut TaskState, value: Option<Value>) -> Result<(), String> {
         let frame = task.frames.pop().expect("frame exists");
         if let Some(parent) = task.frames.last_mut() {
-            // Restore caller vars
             task.vars = frame.saved_vars;
             if let Some(dest) = frame.return_dest {
                 if let Some(v) = value {
                     task.vars.insert(dest, v);
                 }
             }
-            // Continue execution in caller (pc already advanced before call)
             let _ = parent;
         } else {
-            // Task completed
             task.result = value;
             task.status = TaskStatus::Done;
         }
@@ -603,7 +573,6 @@ impl DirectExecutor {
 
     fn eval_builtin(&mut self, func: &str, arg_vals: &[Value]) -> Result<Value, String> {
         match func {
-            // Collection functions
             "len" if arg_vals.len() == 1 => match &arg_vals[0] {
                 Value::String(s) => Ok(Value::Number(s.len() as f64)),
                 Value::List(l) => Ok(Value::Number(l.borrow().len() as f64)),
@@ -669,7 +638,6 @@ impl DirectExecutor {
                 }
             }
 
-            // Math functions
             "abs" if arg_vals.len() == 1 => {
                 if let Value::Number(n) = &arg_vals[0] {
                     Ok(Value::Number(n.abs()))
@@ -727,7 +695,6 @@ impl DirectExecutor {
                 }
             }
 
-            // String functions
             "split" if arg_vals.len() == 2 => {
                 if let (Value::String(s), Value::String(delim)) = (&arg_vals[0], &arg_vals[1]) {
                     let parts: Vec<Value> = s.split(delim)
@@ -793,7 +760,6 @@ impl DirectExecutor {
                 }
             }
 
-            // Type functions
             "type" if arg_vals.len() == 1 => {
                 let t = match &arg_vals[0] {
                     Value::Number(_) => "number",
@@ -829,7 +795,6 @@ impl DirectExecutor {
                 }))
             }
 
-            // Type conversion
             "str" if arg_vals.len() == 1 => Ok(Value::String(self.value_to_string(&arg_vals[0]))),
             "num" if arg_vals.len() == 1 => match &arg_vals[0] {
                 Value::Number(n) => Ok(Value::Number(*n)),
@@ -856,7 +821,6 @@ impl DirectExecutor {
                 Ok(Value::Bool(b))
             }
 
-            // I/O functions
             "print" if arg_vals.len() == 1 => {
                 let line = self.value_to_string(&arg_vals[0]);
                 self.output.push(line.clone());
@@ -870,11 +834,9 @@ impl DirectExecutor {
                 Ok(Value::Number(0.0))
             }
 
-            // Legacy functions
             "open" if arg_vals.len() == 1 => Ok(Value::String("FILE_HANDLE".to_string())),
             "close" if arg_vals.len() == 1 => Ok(Value::Bool(true)),
             
-            // Not yet implemented
             "filter" | "map" => Err("filter and map functions not yet implemented".to_string()),
 
             _ => Err(format!("Invalid native function call: {}", func)),
@@ -883,7 +845,6 @@ impl DirectExecutor {
 
     #[allow(dead_code)]
     fn execute_instructions(&mut self, instructions: &[IrInstr]) -> Result<Option<Value>, String> {
-        // First pass: scanning labels
         let mut labels = HashMap::new();
         for (i, instr) in instructions.iter().enumerate() {
             if let IrInstr::Label { name } = instr {
@@ -933,22 +894,15 @@ impl DirectExecutor {
                 }
                 IrInstr::Call { dest, func, args }
                     if [
-                        // Collection functions
                         "len", "keys", "values", "range", "push", "pop", "sort", "filter", "map",
-                        // Math functions  
                         "abs", "min", "max", "pow", "sqrt", "floor", "ceil", "round",
-                        // String functions
                         "split", "join", "substring", "toupper", "tolower", "trim", "contains",
-                        // Type conversion and checking
                         "str", "num", "bool", "type", "is_map", "is_list", "is_string",
-                        // I/O functions
                         "print", "println",
-                        // Legacy functions
                         "open", "close",
                     ]
                     .contains(&func.as_str()) =>
                 {
-                    // Native functions
                     let arg_vals: Vec<Value> = args
                         .iter()
                         .map(|a| self.get_var(a))
@@ -984,46 +938,38 @@ impl DirectExecutor {
                     pc += 1;
                 }
                 IrInstr::Spawn { task } => {
-                    // Async spawn stub
                     println!("(Async spawn not implemented in interpreter)");
                     self.variables.insert(task.clone(), Value::Bool(true));
                     pc += 1;
                 }
                 IrInstr::Await { dest, task: _ } => {
-                    // Async await stub
                     println!("(Async await not implemented in interpreter)");
                     self.variables.insert(dest.clone(), Value::Bool(true));
                     pc += 1;
                 }
                 IrInstr::AllocFile { dest, path } => {
-                    // File alloc stub
                     println!("(File alloc not implemented in interpreter)");
                     self.variables
                         .insert(dest.clone(), Value::String(format!("FILE:{}", path)));
                     pc += 1;
                 }
                 IrInstr::CloseFile { handle: _ } => {
-                    // File close stub
                     println!("(File close not implemented in interpreter)");
                     pc += 1;
                 }
                 IrInstr::LinkFile { path } => {
-                    // File linking stub
                     println!("(File linking not implemented in interpreter: {})", path);
                     pc += 1;
                 }
                 IrInstr::Hardwire { path } => {
-                    // Hardwire update stub
                     println!("(Hardwire update not implemented in interpreter: {})", path);
                     pc += 1;
                 }
                 IrInstr::PreScan { target } => {
-                    // Pre-scan stub
                     println!("(Pre-scan not implemented in interpreter: {})", target);
                     pc += 1;
                 }
                 _ => {
-                    // Regular instruction
                     self.execute_instruction(instr)?;
                     pc += 1;
                 }
@@ -1281,7 +1227,6 @@ impl DirectExecutor {
                     return Err(format!("Variable '{}' is not a map", map));
                 }
             }
-            // Temporarily mapped GetIndex to handle both
             IrInstr::GetIndex { dest, src, index } => {
                 let src_val = self.get_var(src)?;
                 let idx_val_raw = self.get_var(index)?;
@@ -1355,7 +1300,6 @@ impl DirectExecutor {
                 }
             }
             _ => {
-                // Placeholder for other instructions
             }
         }
 

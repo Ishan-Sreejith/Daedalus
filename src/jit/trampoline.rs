@@ -1,6 +1,3 @@
-//! Phase 3: The "Hello Integer" Trampoline
-//!
-//! Builds a tiny function in JIT memory, then calls it from Rust.
 #![allow(dead_code)]
 
 use std::io;
@@ -8,7 +5,6 @@ use std::io;
 use crate::jit::encoder::{encode_ldp_fp_lr, encode_mov_imm, encode_ret, encode_stp_fp_lr, Reg};
 use crate::jit::memory::JitMemory;
 
-/// Simple encoder that writes u32 instructions in little-endian order.
 pub struct CodeEmitter {
     buf: Vec<u8>,
 }
@@ -43,14 +39,12 @@ impl CodeEmitter {
     }
 }
 
-/// A tiny JIT-compiled function that can be called from Rust.
 pub struct JitFunction {
     mem: JitMemory,
     len: usize,
 }
 
 impl JitFunction {
-    /// Builds a function that returns a constant value in x0.
     pub fn from_returning_u16(value: u16) -> io::Result<Self> {
         let mut emitter = CodeEmitter::new();
         emitter.emit_prologue();
@@ -69,7 +63,6 @@ impl JitFunction {
         })
     }
 
-    /// Calls the generated function as `extern "C" fn() -> i64`.
     pub fn call_i64(&self) -> i64 {
         let func: extern "C" fn() -> i64 = unsafe { std::mem::transmute(self.mem.as_ptr()) };
         func()

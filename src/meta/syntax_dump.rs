@@ -35,14 +35,12 @@ impl SyntaxMapping {
         keywords.insert("not".to_string(), "not".to_string());
         keywords.insert("say".to_string(), "say".to_string());
         keywords.insert("ask".to_string(), "ask".to_string());
-        // Extra keywords used by metroman / extensions
         keywords.insert("fng".to_string(), "fng".to_string());
         keywords.insert("use".to_string(), "use".to_string());
         keywords.insert("upd".to_string(), "upd".to_string());
         keywords.insert("init".to_string(), "init".to_string());
 
         let mut operators = HashMap::new();
-        // Compatibility: older syntax.fr used say:/ask: (the lexer token is `say`/`ask`, colon is separate)
         operators.insert("say:".to_string(), "say:".to_string());
         operators.insert("ask:".to_string(), "ask:".to_string());
         operators.insert("+".to_string(), "+".to_string());
@@ -122,7 +120,6 @@ impl SyntaxMapping {
     pub fn load_from_file(path: &str) -> std::io::Result<Self> {
         let content = std::fs::read_to_string(path)?;
 
-        // Skip comment lines
         let json_start = content
             .lines()
             .position(|line| line.trim().starts_with('{'))

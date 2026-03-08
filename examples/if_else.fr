@@ -1,4 +1,3 @@
-// If/else example
 var x: 42
 
 if x > 40 {

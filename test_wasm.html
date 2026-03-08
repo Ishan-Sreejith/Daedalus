@@ -177,7 +177,6 @@
             }
         };
 
-        // Add keyboard shortcut
         document.addEventListener('keydown', function(e) {
             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
                 e.preventDefault();
@@ -185,7 +184,6 @@
             }
         });
 
-        // Initialize WebAssembly
         initWasm();
     </script>
 </body>

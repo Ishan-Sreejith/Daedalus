@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fs::File;
 
-/// Resource garbage collector for automatic cleanup
 #[allow(dead_code)]
 pub struct ResourceGC {
     file_handles: HashMap<String, File>,
@@ -21,7 +20,6 @@ impl ResourceGC {
         let file = File::open(path)?;
         self.file_handles.insert(name.clone(), file);
 
-        // Track in current scope
         if let Some(scope) = self.scopes.last_mut() {
             scope.push(name);
         }
@@ -39,7 +37,6 @@ impl ResourceGC {
 
     pub fn exit_scope(&mut self) {
         if let Some(scope) = self.scopes.pop() {
-            // Auto-close all files in this scope
             for name in scope {
                 self.file_handles.remove(&name);
             }
@@ -54,7 +51,6 @@ impl ResourceGC {
 
 impl Drop for ResourceGC {
     fn drop(&mut self) {
-        // Ensure all resources are cleaned up
         self.cleanup_all();
     }
 }
@@ -66,7 +62,6 @@ mod tests {
 
     #[test]
     fn test_resource_gc() {
-        // Create a test file
         fs::write("/tmp/test_gc.txt", "test").unwrap();
 
         let mut gc = ResourceGC::new();
@@ -78,10 +73,8 @@ mod tests {
 
         gc.exit_scope();
 
-        // File should be auto-closed
         assert_eq!(gc.file_handles.len(), 0);
 
-        // Cleanup
         fs::remove_file("/tmp/test_gc.txt").ok();
     }
 }

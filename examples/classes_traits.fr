@@ -1,5 +1,3 @@
-// class/trait + method calls
-// Method call sugar: obj.method: a, b  => calls Type_method(obj, a, b) if obj is a known struct/class type.
 
 trait Printable {
     fn print: self;

@@ -1,6 +1,4 @@
 #!/bin/bash
-# Complete verification script
-# Run this to verify all work completed in this session
 
 cd "/Users/ishan/IdeaProjects/CoRe Main/CoRe Backup V1.0 copy"
 
@@ -9,7 +7,6 @@ echo "║              SESSION VERIFICATION & COMPLETION CHECKLIST              
 echo "╚════════════════════════════════════════════════════════════════════════════╝"
 echo ""
 
-# Check 1: is_map fix in code
 echo "[1/6] Checking is_map fix in source code..."
 if grep -q 'func == "is_map"' src/jit/compiler.rs; then
     echo "  ✅ is_map handler found in src/jit/compiler.rs"
@@ -30,7 +27,6 @@ else
 fi
 echo ""
 
-# Check 2: Test scripts created
 echo "[2/6] Checking test scripts..."
 test_files=(
     "verify_jit_features.sh"
@@ -48,7 +44,6 @@ for file in "${test_files[@]}"; do
 done
 echo ""
 
-# Check 3: Documentation files created
 echo "[3/6] Checking documentation files..."
 doc_files=(
     "JIT_TESTING_MARKDOWN_REPORT.md"
@@ -66,7 +61,6 @@ for file in "${doc_files[@]}"; do
 done
 echo ""
 
-# Check 4: Build status
 echo "[4/6] Checking build status..."
 if cargo build 2>&1 | grep -q "Finished"; then
     echo "  ✅ Build succeeds"
@@ -75,10 +69,8 @@ else
 fi
 echo ""
 
-# Check 5: Run quick tests
 echo "[5/6] Running quick feature tests..."
 
-# Test simple variable
 cat > /tmp/verify_var.fr << 'EOF'
 var x: 42
 say: x
@@ -91,7 +83,6 @@ else
     echo "  ⚠️  Variables test inconclusive"
 fi
 
-# Test arithmetic
 cat > /tmp/verify_arith.fr << 'EOF'
 say: 5 + 3
 EOF
@@ -103,7 +94,6 @@ else
     echo "  ⚠️  Arithmetic test inconclusive"
 fi
 
-# Test is_map fix
 cat > /tmp/verify_for.fr << 'EOF'
 var list: [1, 2, 3]
 for item in list {
@@ -122,7 +112,6 @@ fi
 
 echo ""
 
-# Check 6: Main.fr status
 echo "[6/6] Testing main.fr..."
 ./target/debug/fforge main.fr > /tmp/main_verify.out 2>&1
 if grep -q "Unknown function: is_map" /tmp/main_verify.out; then

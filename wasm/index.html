@@ -71,7 +71,6 @@ greet: &quot;Developer&quot;"></textarea>
     <script type="module">
         let compiler, currentFileName = null;
 
-        // Add error handling and debugging
         window.onerror = function(msg, url, line) {
             console.error('JavaScript Error:', msg, 'at', url, ':', line);
             alert('JavaScript Error: ' + msg);
@@ -95,20 +94,17 @@ greet: &quot;Developer&quot;"></textarea>
                 compiler = new CoreCompilerWasm();
                 console.log('CoreCompilerWasm created:', compiler);
 
-                // Test the compiler
                 compiler.save_file('test.fr', 'say: "Test"');
                 console.log('Test file saved');
 
                 loadExample('hello');
 
-                // Hide loading indicator and show success
                 loadingIndicator.style.background = '#27ae60';
                 loadingIndicator.innerHTML = '✅ CoRe WebAssembly compiler loaded successfully!';
                 setTimeout(() => {
                     loadingIndicator.style.display = 'none';
                 }, 3000);
 
-                // Update terminal
                 document.getElementById('terminal').innerHTML +=
                     '<div class="terminal-line" style="color: #00ff00;">✓ CoRe WebAssembly compiler loaded successfully!</div>' +
                     '<div class="terminal-line">Type "help" for available commands</div>';
@@ -168,9 +164,7 @@ say: message`;
                 document.getElementById('currentFile').textContent = name;
                 document.getElementById('codeEditor').value = compiler.get_file_content(name);
 
-                // Update active file highlighting
                 document.querySelectorAll('.file-item').forEach(item => item.classList.remove('active'));
-                // Find the clicked element and highlight it
                 const fileItems = document.querySelectorAll('.file-item');
                 fileItems.forEach(item => {
                     if (item.textContent.includes(name)) {
@@ -199,7 +193,6 @@ say: message`;
                 compiler.save_file(currentFileName, content);
                 console.log('File saved:', currentFileName);
 
-                // Visual feedback
                 const saveButton = event.target;
                 const originalText = saveButton.textContent;
                 saveButton.textContent = '✓ Saved';
@@ -226,7 +219,6 @@ say: message`;
                     return;
                 }
 
-                // Save before running
                 saveFile();
 
                 console.log('Executing file:', currentFileName);
@@ -235,7 +227,6 @@ say: message`;
 
                 document.getElementById('output').textContent = output;
 
-                // Visual feedback
                 const runButton = event.target;
                 const originalText = runButton.textContent;
                 runButton.textContent = '✓ Executed';
@@ -352,7 +343,6 @@ greet: "Developer"`
                 input.value = '';
                 terminal.scrollTop = terminal.scrollHeight;
 
-                // Refresh file list if it was a file operation
                 if (command.includes('core --out') || command.includes('metroman --out')) {
                     refreshFileList();
                 }
@@ -365,13 +355,11 @@ greet: "Developer"`
             }
         };
 
-        // Initialize when page loads
         document.addEventListener('DOMContentLoaded', () => {
             console.log('Page loaded, initializing compiler...');
             initCompiler();
         });
 
-        // Also try to initialize immediately
         initCompiler();
     </script>
 </body>

@@ -1,6 +1,3 @@
-// async/await:
-// - `forge -r` runs a cooperative scheduler (spawn/sleep/await are meaningful).
-// - VM/default and `--native` treat async functions synchronously; `await` is effectively a no-op.
 
 async fn add_async: a, b {
     return a + b

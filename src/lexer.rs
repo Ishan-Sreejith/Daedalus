@@ -1,14 +1,11 @@
 use logos::Logos;
 
-/// Tokens for the CoRe language
 #[derive(Logos, Debug, Clone, PartialEq)]
 #[logos(skip r"[ \t\n\f]+")]
 pub enum Token {
-    // Comments
     #[regex(r"//[^\n]*", logos::skip)]
     #[regex(r"(?s)/\*(?:[^*]|\*[^/])*\*/", logos::skip)]
     #[regex(r"#[^\n]*", logos::skip)]
-    // Keywords
     #[token("fn")]
     Fn,
 
@@ -129,7 +126,6 @@ pub enum Token {
     #[token("init")]
     Init,
 
-    // Operators
     #[token("+")]
     Plus,
 
@@ -163,7 +159,6 @@ pub enum Token {
     #[token("=")]
     Eq,
 
-    // Delimiters
     #[token(":")]
     Colon,
 
@@ -197,7 +192,6 @@ pub enum Token {
     #[token("]")]
     RBracket,
 
-    // Literals
     #[regex(r#""([^"\\]|\\.)*""#, |lex| {
         let s = lex.slice();
         s[1..s.len()-1].to_string()
@@ -248,7 +242,6 @@ mod tests {
 
     #[test]
     fn test_lexer_basic() {
-        // var x : 10 + 2 => Var, Identifier, Colon, Number, Plus, Number = 6 tokens
         let source = r#"var x: 10 + 2"#;
         let tokens: Vec<_> = Lexer::new(source).collect();
         assert_eq!(tokens.len(), 6);
@@ -258,8 +251,6 @@ mod tests {
     fn test_lexer_say() {
         let source = r#"say: "Hello""#;
         let tokens: Vec<_> = Lexer::new(source).collect();
-        // tokens is a Vec<(Result<Token, String>, Range<usize>)>
-        // We need to match against the first element of the tuple
         assert!(matches!(tokens[0].0, Ok(Token::Say)));
     }
 

@@ -1,5 +1,4 @@
 #!/bin/bash
-# Simple test - just test core features one by one
 
 cd "/Users/ishan/IdeaProjects/CoRe Main/CoRe Backup V1.0 copy"
 
@@ -12,7 +11,6 @@ if [ $? -ne 0 ]; then
 fi
 echo "✓ Build succeeded"
 
-# Test 1: Simple variable
 echo ""
 echo "TEST 1: Simple variable"
 cat > /tmp/test1.fr << 'EOF'
@@ -27,7 +25,6 @@ else
     cat /tmp/test1.out | tail -5
 fi
 
-# Test 2: Arithmetic
 echo ""
 echo "TEST 2: Arithmetic"
 cat > /tmp/test2.fr << 'EOF'
@@ -43,7 +40,6 @@ else
     cat /tmp/test2.out | tail -5
 fi
 
-# Test 3: Function call
 echo ""
 echo "TEST 3: Function call"
 cat > /tmp/test3.fr << 'EOF'
@@ -62,7 +58,6 @@ else
     cat /tmp/test3.out | tail -5
 fi
 
-# Test 4: For loop (after is_map fix)
 echo ""
 echo "TEST 4: For loop (with is_map fix)"
 cat > /tmp/test4.fr << 'EOF'
@@ -82,7 +77,6 @@ else
     cat /tmp/test4.out | tail -5
 fi
 
-# Test 5: main.fr
 echo ""
 echo "TEST 5: main.fr (the original problem file)"
 ./target/debug/fforge main.fr > /tmp/test5.out 2>&1

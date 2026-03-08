@@ -1,11 +1,5 @@
 #!/bin/bash
 
-###############################################################################
-# CoRe Language - Complete Feature Test Suite
-#
-# Tests all features of the CoRe language across all 4 execution pathways
-# Usage: bash test_core_features.sh
-###############################################################################
 
 PROJECT_DIR="/Users/ishan/IdeaProjects/CoRe Main/CoRe Backup V1.0 copy"
 cd "$PROJECT_DIR" || exit 1
@@ -16,7 +10,6 @@ echo "║                      4 Execution Pathways Tested                      
 echo "╚════════════════════════════════════════════════════════════════════════════╝"
 echo ""
 
-# Check binaries exist
 for binary in forge fforge forger; do
     if [ ! -f "./target/debug/$binary" ]; then
         echo "❌ Error: $binary binary not found"
@@ -28,9 +21,6 @@ done
 echo "✅ All binaries found"
 echo ""
 
-# ═══════════════════════════════════════════════════════════════════════════
-# TEST 1: Simple Function Return
-# ═══════════════════════════════════════════════════════════════════════════
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "TEST 1: Simple Function Return (fn add: a, b)"
@@ -51,9 +41,6 @@ echo "  forge (VM):    " $(./target/debug/forge /tmp/test1.fr 2>/dev/null | rg "
 echo "  forger (Rust): " $(./target/debug/forger /tmp/test1.fr 2>/dev/null | rg "✓ Result:" | sed 's/.*Result: //')
 echo ""
 
-# ═══════════════════════════════════════════════════════════════════════════
-# TEST 2: Arithmetic Operations
-# ═══════════════════════════════════════════════════════════════════════════
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "TEST 2: Arithmetic Operations"
@@ -73,9 +60,6 @@ echo "Results:"
 echo "  fforge: " $(./target/debug/fforge /tmp/test2.fr 2>/dev/null | tail -1)
 echo ""
 
-# ═══════════════════════════════════════════════════════════════════════════
-# TEST 3: Conditionals
-# ═══════════════════════════════════════════════════════════════════════════
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "TEST 3: If/Else Conditionals"
@@ -96,9 +80,6 @@ echo "Results:"
 ./target/debug/fforge /tmp/test3.fr 2>/dev/null | tail -1
 echo ""
 
-# ═══════════════════════════════════════════════════════════════════════════
-# TEST 4: Loops
-# ═══════════════════════════════════════════════════════════════════════════
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "TEST 4: While Loops"
@@ -117,9 +98,6 @@ echo "Results:"
 ./target/debug/fforge /tmp/test4.fr 2>/dev/null | tail -1
 echo ""
 
-# ═══════════════════════════════════════════════════════════════════════════
-# TEST 5: Multiple Function Calls
-# ═══════════════════════════════════════════════════════════════════════════
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "TEST 5: Multiple Function Calls"
@@ -143,9 +121,6 @@ echo "Results:"
 ./target/debug/fforge /tmp/test5.fr 2>/dev/null | tail -1
 echo ""
 
-# ═══════════════════════════════════════════════════════════════════════════
-# MAIN.FR TEST
-# ═══════════════════════════════════════════════════════════════════════════
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "MAIN TEST: Comprehensive main.fr"

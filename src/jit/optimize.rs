@@ -1,13 +1,8 @@
-//! Phase 10: Optimization Passes
-//!
-//! Peephole optimizations and register allocation improvements for better JIT performance.
 #![allow(dead_code)]
 
 use std::collections::HashMap;
 
-/// A peephole optimizer that simplifies instruction sequences.
 pub struct PeepholeOptimizer {
-    /// Previous instruction (for pattern matching)
     prev_instr: Option<u32>,
 }
 
@@ -16,16 +11,10 @@ impl PeepholeOptimizer {
         Self { prev_instr: None }
     }
 
-    /// Optimize a sequence of instructions.
-    /// Looks for patterns like:
-    /// - `mov x, #0; add x, x, y` → `mov x, y`
-    /// - `add x, x, #0` → nothing (dead code)
     pub fn optimize(&mut self, instrs: &[u32]) -> Vec<u32> {
         let mut optimized = Vec::new();
 
         for (_i, &instr) in instrs.iter().enumerate() {
-            // Example: detect dead adds (add x, x, #0)
-            // These would need proper instruction decoding to implement fully
             optimized.push(instr);
         }
 
@@ -33,11 +22,8 @@ impl PeepholeOptimizer {
     }
 }
 
-/// Linear scan register allocator for better register usage.
 pub struct LinearScanAllocator {
-    /// Variable -> register lifetime (first_use, last_use)
     lifetimes: HashMap<String, (usize, usize)>,
-    /// Active intervals
     active: Vec<Interval>,
 }
 
@@ -57,7 +43,6 @@ impl LinearScanAllocator {
         }
     }
 
-    /// Compute liveness for all variables.
     pub fn compute_liveness(&mut self, var_uses: &[(usize, String)]) {
         for (pos, var) in var_uses {
             let entry = self.lifetimes.entry(var.clone()).or_insert((*pos, *pos));
@@ -65,8 +50,6 @@ impl LinearScanAllocator {
         }
     }
 
-    /// Allocate registers using linear scan algorithm.
-    /// Returns a map of variables to register numbers.
     pub fn allocate(&mut self) -> HashMap<String, u8> {
         let mut result = HashMap::new();
         let mut next_reg = 0u8;
@@ -76,8 +59,6 @@ impl LinearScanAllocator {
                 result.insert(var.clone(), next_reg);
                 next_reg += 1;
             } else {
-                // Would need to implement spilling (store to stack)
-                // For now, just skip
                 result.insert(var.clone(), 0);
             }
         }
@@ -86,7 +67,6 @@ impl LinearScanAllocator {
     }
 }
 
-/// Code generation optimizer that combines multiple passes.
 pub struct CodegenOptimizer {
     peephole: PeepholeOptimizer,
     regalloc: LinearScanAllocator,
@@ -100,14 +80,9 @@ impl CodegenOptimizer {
         }
     }
 
-    /// Run all optimization passes.
     pub fn optimize(&mut self, instrs: &[u32]) -> Vec<u32> {
-        // 1. Peephole optimization
         let optimized = self.peephole.optimize(instrs);
 
-        // 2. Register allocation improvements (for future use)
-        // self.regalloc.compute_liveness(...);
-        // let alloc = self.regalloc.allocate();
 
         optimized
     }

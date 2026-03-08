@@ -1,6 +1,3 @@
-//! Symbol Table - Tracks variables, functions, and types across compilation
-//!
-//! Provides efficient lookup and management of symbols during JIT compilation
 #![allow(dead_code)]
 
 use std::collections::HashMap;
@@ -46,14 +43,11 @@ pub enum SymbolLocation {
 }
 
 pub struct SymbolTable {
-    // Scoped symbol storage
     scopes: Vec<HashMap<String, Symbol>>,
     current_scope: usize,
 
-    // Global function registry
     functions: HashMap<String, FunctionSymbol>,
 
-    // Type inference cache
     type_cache: HashMap<String, ValueType>,
 }
 
@@ -127,7 +121,6 @@ impl SymbolTable {
     }
 
     pub fn lookup(&self, name: &str) -> Option<&Symbol> {
-        // Search from current scope up to global
         for scope_idx in (0..=self.current_scope).rev() {
             if let Some(symbol) = self.scopes[scope_idx].get(name) {
                 return Some(symbol);
@@ -164,7 +157,6 @@ impl SymbolTable {
         self.type_cache.get(name).copied()
     }
 
-    // Function management
     pub fn declare_function(&mut self, func: FunctionSymbol) -> Result<(), String> {
         if self.functions.contains_key(&func.name) {
             return Err(format!("Function '{}' already declared", func.name));
@@ -194,7 +186,6 @@ impl SymbolTable {
         }
     }
 
-    // Get hot variables (frequently accessed)
     pub fn get_hot_variables(&self, threshold: usize) -> Vec<String> {
         let mut hot_vars = Vec::new();
         for scope in &self.scopes {
@@ -207,7 +198,6 @@ impl SymbolTable {
         hot_vars
     }
 
-    // Get hot functions (frequently called)
     pub fn get_hot_functions(&self, threshold: usize) -> Vec<String> {
         self.functions
             .iter()

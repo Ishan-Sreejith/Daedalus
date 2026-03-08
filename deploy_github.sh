@@ -1,17 +1,14 @@
 #!/bin/bash
 
-# CoRe Language WebAssembly Deployment Script for GitHub Pages
 
 echo "🚀 Deploying CoRe Language to GitHub Pages..."
 
-# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Check if we're in a git repository
 if [ ! -d ".git" ]; then
     echo -e "${RED}❌ Error: Not in a git repository. Please initialize git first:${NC}"
     echo "   git init"
@@ -19,7 +16,6 @@ if [ ! -d ".git" ]; then
     exit 1
 fi
 
-# Check if pkg directory exists
 if [ ! -d "pkg" ]; then
     echo -e "${YELLOW}📦 WebAssembly package not found. Building...${NC}"
     ./setup_wasm.sh
@@ -29,18 +25,14 @@ if [ ! -d "pkg" ]; then
     fi
 fi
 
-# Create a deployment directory
 echo -e "${BLUE}📁 Creating deployment structure...${NC}"
 mkdir -p deploy
 
-# Copy necessary files
 cp index.html deploy/
 cp -r pkg deploy/
 cp WEBASSEMBLY_README.md deploy/README.md
 
-# Create a simple .gitignore for the deployment
 cat > deploy/.gitignore << EOF
-# Development files
 src/
 target/
 Cargo.toml
@@ -49,7 +41,6 @@ Cargo.lock
 .vscode/
 .idea/
 
-# Keep only the web deployment files
 !index.html
 !pkg/
 !README.md

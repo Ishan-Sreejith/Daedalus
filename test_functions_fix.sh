@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# Test script for function fixes
 set -e
 
 echo "Building..."

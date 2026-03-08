@@ -46,8 +46,6 @@ fn main() -> ExitCode {
     };
     debug_log(debug, "fforge starting...");
 
-    // JIT backend is currently ARM64-only. On other architectures, fall back to the
-    // Rust (direct) execution mode via `forge --rust`.
     #[cfg(not(target_arch = "aarch64"))]
     {
         eprintln!("fforge: JIT is only supported on aarch64; falling back to `forge --rust`.");
@@ -74,7 +72,6 @@ fn main() -> ExitCode {
     };
     debug_log(debug, &format!("File read, {} bytes", source.len()));
 
-    // 1. Lexing
     debug_log(debug, "Starting lexer...");
     let lexer_results: Vec<_> = Lexer::new(&source).collect();
     debug_log(
@@ -94,7 +91,6 @@ fn main() -> ExitCode {
     }
     debug_log(debug, &format!("Lexer complete, {} tokens", tokens.len()));
 
-    // 2. Parsing
     debug_log(debug, "Starting parser...");
     let mut parser = Parser::new(tokens);
     let ast = match parser.parse() {
@@ -106,7 +102,6 @@ fn main() -> ExitCode {
     };
     debug_log(debug, "Parser complete");
 
-    // 3. IR Generation
     debug_log(debug, "Starting IR generation...");
     let mut ir_builder = IrBuilder::new();
     let ir = match ir_builder.build(&ast, None) {
@@ -124,7 +119,6 @@ fn main() -> ExitCode {
         }
     }
 
-    // 4. JIT Compilation & Execution
     if debug {
         println!("→ JIT Compiling & Executing {}...", filename);
     }
@@ -135,9 +129,6 @@ fn main() -> ExitCode {
 
     debug_log(debug, &format!("Compiling {} functions...", ir.functions.len()));
 
-    // Compile all functions (sorted by name in reverse for deterministic order)
-    // This helps with forward references - functions defined earlier tend to be
-    // utility functions called by later functions (e.g., system_log called by startup)
     let mut func_names: Vec<_> = ir.functions.keys().cloned().collect();
     func_names.sort_by(|a, b| b.cmp(a)); // Reverse order
 
@@ -159,7 +150,6 @@ fn main() -> ExitCode {
             ir.global_code.len()
         ),
     );
-    // Execute global code
     match jit.execute_global(&ir.global_code) {
         Ok(res) => {
             debug_log(debug, &format!("Execution complete, result: {}", res));

@@ -1,4 +1,3 @@
-// Async function demonstration
 async fn fetch_data: url {
     say: "Fetching from: "
     say: url
@@ -6,12 +5,10 @@ async fn fetch_data: url {
     return 42
 }
 
-// Await an async function (works in all modes; only `-r` is truly concurrent)
 var result: await fetch_data: "https://example.com"
 say: "Got result: "
 say: result
 
-// Multiple async operations
 async fn task1: {
     sleep: 5
     say: "Task 1 done"

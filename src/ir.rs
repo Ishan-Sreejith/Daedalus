@@ -6,10 +6,8 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Intermediate Representation - Linear three-address code
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IrInstr {
-    // Arithmetic
     Add {
         dest: String,
         left: String,
@@ -31,7 +29,6 @@ pub enum IrInstr {
         right: String,
     },
 
-    // Comparisons
     Eq {
         dest: String,
         left: String,
@@ -54,7 +51,6 @@ pub enum IrInstr {
         right: String,
     },
 
-    // Logic
     LogicAnd {
         dest: String,
         left: String,
@@ -70,7 +66,6 @@ pub enum IrInstr {
         src: String,
     },
 
-    // Floating Point
     FAdd {
         dest: String,
         left: String,
@@ -92,7 +87,6 @@ pub enum IrInstr {
         right: String,
     },
 
-    // Bitwise
     BitAnd {
         dest: String,
         left: String,
@@ -123,7 +117,6 @@ pub enum IrInstr {
         right: String,
     },
 
-    // Structs
     AllocStruct {
         dest: String,
         name: String,
@@ -139,7 +132,6 @@ pub enum IrInstr {
         member: String,
     },
 
-    // Memory
     LoadConst {
         dest: String,
         value: IrValue,
@@ -149,7 +141,6 @@ pub enum IrInstr {
         src: String,
     },
 
-    // Lists
     AllocList {
         dest: String,
         items: Vec<String>,
@@ -165,7 +156,6 @@ pub enum IrInstr {
         value: String,
     },
 
-    // Maps
     AllocMap {
         dest: String,
     },
@@ -180,7 +170,6 @@ pub enum IrInstr {
         key: String,
     },
 
-    // I/O
     Print {
         src: String,
     },
@@ -192,7 +181,6 @@ pub enum IrInstr {
         prompt: String,
     },
 
-    // Control flow
     Call {
         dest: Option<String>,
         func: String,
@@ -212,7 +200,6 @@ pub enum IrInstr {
         label: String,
     },
 
-    // Resource management
     AllocFile {
         dest: String,
         path: String,
@@ -221,7 +208,6 @@ pub enum IrInstr {
         handle: String,
     },
 
-    // Async
     Spawn {
         task: String,
     },
@@ -230,17 +216,14 @@ pub enum IrInstr {
         task: String,
     },
 
-    // File linking
     LinkFile {
         path: String,
     },
 
-    // Hardwire update
     Hardwire {
         path: String,
     },
 
-    // Pre-scan
     PreScan {
         target: String,
     },
@@ -411,7 +394,6 @@ impl IrBuilder {
                     self.process_import(path, current_file, ir_program)?;
                 }
                 TopLevel::Use(path) => {
-                    // File linking - add a LinkFile instruction
                     ir_program.global_code.push(IrInstr::LinkFile {
                         path: self
                             .resolve_import_path(path, current_file)?
@@ -420,7 +402,6 @@ impl IrBuilder {
                     });
                 }
                 TopLevel::Hardwire(path) => {
-                    // Hardwire update - add a Hardwire instruction
                     ir_program.global_code.push(IrInstr::Hardwire {
                         path: self
                             .resolve_import_path(path, current_file)?
@@ -492,7 +473,6 @@ impl IrBuilder {
         let raw = PathBuf::from(import_str);
         let base_dir = current_file.parent().unwrap_or_else(|| Path::new("."));
 
-        // If an extension is explicitly provided, respect it.
         if raw.extension().is_some() {
             if raw.is_absolute() {
                 return Ok(raw);
@@ -500,7 +480,6 @@ impl IrBuilder {
             return Ok(base_dir.join(raw));
         }
 
-        // No extension provided: prefer .fr, but also support plugin-style files like .mtro.
         let mut fr = raw.clone();
         fr.set_extension("fr");
         let mut mtro = raw;
@@ -513,7 +492,6 @@ impl IrBuilder {
             if mtro.exists() {
                 return Ok(mtro);
             }
-            // Default error path: .fr
             return Ok(fr);
         }
 
@@ -526,14 +504,12 @@ impl IrBuilder {
             return Ok(mtro_rel);
         }
 
-        // Default error path: .fr
         Ok(fr_rel)
     }
 
     fn build_function(&mut self, func: &FnDef) -> Result<IrFunction, String> {
         let mut instructions = Vec::new();
 
-        // Track parameter types
         for param in &func.params {
             self.var_types.insert(param.clone(), ValueType::Unknown);
         }
@@ -670,7 +646,6 @@ impl IrBuilder {
                 instrs.push(IrInstr::Jump { label: catch_label });
             }
             Stmt::Struct(_) => {
-                // Metadata handled at top level usually, or as a no-op here
             }
             Stmt::Expr(expr) => {
                 self.build_expr(expr, instrs)?;
@@ -690,13 +665,11 @@ impl IrBuilder {
                 let else_label = self.fresh_label();
                 let end_label = self.fresh_label();
 
-                // Jump to else if condition is false (NOT cond is true)
                 instrs.push(IrInstr::JumpIf {
                     cond: not_cond,
                     label: else_label.clone(),
                 });
 
-                // Then block
                 for stmt in then_block {
                     self.build_statement(stmt, instrs)?;
                 }
@@ -704,7 +677,6 @@ impl IrBuilder {
                     label: end_label.clone(),
                 });
 
-                // Else block
                 instrs.push(IrInstr::Label { name: else_label });
                 if let Some(else_stmts) = else_block {
                     for stmt in else_stmts {
@@ -743,11 +715,9 @@ impl IrBuilder {
             Stmt::For(var_name, iterable, body) => {
                 match iterable {
                     Expr::Range(start_expr, end_expr) => {
-                        // Numeric range loop: for i in start..end
                         let start_temp = self.build_expr(start_expr, instrs)?;
                         let end_temp = self.build_expr(end_expr, instrs)?;
 
-                        // Initialize loop variable
                         instrs.push(IrInstr::Move {
                             dest: var_name.clone(),
                             src: start_temp,
@@ -760,7 +730,6 @@ impl IrBuilder {
                             name: start_label.clone(),
                         });
 
-                        // Check condition: var < end
                         let cond_temp = self.fresh_temp();
                         instrs.push(IrInstr::Lt {
                             dest: cond_temp.clone(),
@@ -781,12 +750,10 @@ impl IrBuilder {
                             name: continue_label,
                         });
 
-                        // Body
                         for stmt in body {
                             self.build_statement(stmt, instrs)?;
                         }
 
-                        // Increment
                         let one_temp = self.fresh_temp();
                         instrs.push(IrInstr::LoadConst {
                             dest: one_temp.clone(),
@@ -808,9 +775,6 @@ impl IrBuilder {
                         instrs.push(IrInstr::Label { name: end_label });
                     }
                     _ => {
-                        // General iteration: for item in list/map
-                        // - list: yields elements
-                        // - map: yields keys (via keys(map))
                         let iterable_temp = self.build_expr(iterable, instrs)?;
 
                         let iter_list = self.fresh_temp();
@@ -828,7 +792,6 @@ impl IrBuilder {
                             label: map_label.clone(),
                         });
 
-                        // List branch
                         instrs.push(IrInstr::Move {
                             dest: iter_list.clone(),
                             src: iterable_temp.clone(),
@@ -837,7 +800,6 @@ impl IrBuilder {
                             label: init_label.clone(),
                         });
 
-                        // Map branch
                         instrs.push(IrInstr::Label { name: map_label });
                         let keys_temp = self.fresh_temp();
                         instrs.push(IrInstr::Call {
@@ -850,7 +812,6 @@ impl IrBuilder {
                             src: keys_temp,
                         });
 
-                        // Shared init + loop
                         instrs.push(IrInstr::Label { name: init_label });
 
                         let idx_var = self.fresh_temp();
@@ -974,8 +935,6 @@ impl IrBuilder {
                 } else if !self.var_types.contains_key(name)
                     && self.known_functions.get(name).copied() == Some(0)
                 {
-                    // Convenience: using a function name as an expression implicitly calls it if it takes 0 args.
-                    // Example: `say: get_five`
                     let dest = self.fresh_temp();
                     instrs.push(IrInstr::Call {
                         dest: Some(dest.clone()),
@@ -1211,7 +1170,6 @@ impl IrBuilder {
             Expr::Neg(sub_expr) => {
                 let temp = self.build_expr(sub_expr, instrs)?;
                 let dest = self.fresh_temp();
-                // Negate by subtracting from zero
                 let zero = self.fresh_temp();
                 instrs.push(IrInstr::LoadConst {
                     dest: zero.clone(),
@@ -1248,8 +1206,6 @@ impl IrBuilder {
                 let start_temp = self.build_expr(start, instrs)?;
                 let end_temp = self.build_expr(end, instrs)?;
                 let dest = self.fresh_temp();
-                // We'll use a pseudo-instruction or just a call for now?
-                // Actually, let's just make it a call to a builtin "range"
                 instrs.push(IrInstr::Call {
                     dest: Some(dest.clone()),
                     func: "range".to_string(),
@@ -1273,9 +1229,6 @@ impl IrBuilder {
             }
 
             Expr::MethodCall(receiver, method, args) => {
-                // Desugar: obj.method: a, b
-                // -> if obj is a known struct type, call "<Type>_<method>(obj, a, b)"
-                // -> otherwise call "<method>(obj, a, b)"
                 let receiver_val = self.build_expr(receiver, instrs)?;
 
                 let resolved_name = match receiver.as_ref() {
@@ -1325,16 +1278,6 @@ impl IrBuilder {
                 let target_temp = self.build_expr(target, instrs)?;
                 let index_temp = self.build_expr(index, instrs)?;
                 let dest = self.fresh_temp();
-                // Check if target is a list or map at runtime
-                // For now, we use GetIndex for lists and try to reuse it or use GetMap
-                // Since IR is untyped, we don't know yet.
-                // Let's use a generic access instruction or decide based on context?
-                // Actually, let's use GetIndex for everything and let the executor handle it?
-                // Or we can differentiate if we knew types.
-                // Given we don't know types, let's look at how we implemented GetIndex.
-                // It takes dest, src, index.
-                // If we want to support maps, we should probably rename GetIndex to GetItem or update GetIndex to handle both.
-                // For this implementation, I'll update GetIndex to be the generic getter.
                 instrs.push(IrInstr::GetIndex {
                     dest: dest.clone(),
                     src: target_temp,

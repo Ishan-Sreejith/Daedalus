@@ -22,7 +22,6 @@
                 const compiler = new CoreCompilerWasm();
                 console.log('Compiler created');
 
-                // Test basic functionality
                 compiler.save_file('test.fr', 'say: "Hello WebAssembly!"');
                 const result = compiler.execute('test.fr');
 

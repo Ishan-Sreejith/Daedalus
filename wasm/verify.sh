@@ -3,13 +3,11 @@
 echo "🔍 CoRe Language WebAssembly Setup Verification"
 echo "=============================================="
 
-# Check if in correct directory
 if [ ! -f "index.html" ]; then
     echo "❌ Please run this from the wasm/ directory"
     exit 1
 fi
 
-# Check WASM files
 echo "📦 Checking WASM build files..."
 if [ -f "pkg/core_wasm.js" ] && [ -f "pkg/core_wasm_bg.wasm" ]; then
     echo "✅ WASM files present"
@@ -20,7 +18,6 @@ else
     exit 1
 fi
 
-# Check required files
 echo ""
 echo "📄 Checking required files..."
 required_files=("index.html" "test.html" "start.sh" "src/lib.rs" "Cargo.toml")
@@ -32,7 +29,6 @@ for file in "${required_files[@]}"; do
     fi
 done
 
-# Check if Python is available
 echo ""
 echo "🐍 Checking Python for HTTP server..."
 if command -v python3 &> /dev/null; then
@@ -43,7 +39,6 @@ else
     echo "❌ Python not found. Install Python to run local server."
 fi
 
-# Final status
 echo ""
 echo "🎯 Setup Status: READY ✅"
 echo ""

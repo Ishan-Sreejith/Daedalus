@@ -14,10 +14,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Create a new plugin syntax file
     #[command(name = "--out")]
     Out {
-        /// Output filename (e.g. myplugin.fr)
         file: String,
     },
 }

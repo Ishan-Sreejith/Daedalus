@@ -117,14 +117,10 @@ impl Parser {
             _ => return Err("Expected function name".to_string()),
         };
 
-        // Parse parameters - colon is optional if no parameters
         let mut params = Vec::new();
 
-        // Check if next token is LBrace (no params)
         if matches!(self.current(), Some(Token::LBrace)) {
-            // No parameters, no colon needed
         } else {
-            // Parameters present, expect colon
             self.expect(Token::Colon)?;
 
             loop {
@@ -186,7 +182,6 @@ impl Parser {
                 }
             }
             Some(Token::Fn) | Some(Token::Async) => {
-                // Nested function definition
                 let func = self.parse_function(FnType::Normal)?;
                 Ok(Stmt::Expr(Expr::Identifier(func.name)))
             }
@@ -211,12 +206,9 @@ impl Parser {
             _ => return Err("Expected variable name".to_string()),
         };
 
-        // Parse expression - colon is optional for arrays
         let expr = if matches!(self.current(), Some(Token::LBrace)) {
-            // Array declaration without colon
             self.parse_expression()?
         } else {
-            // Regular declaration with colon
             self.expect(Token::Colon)?;
             self.parse_expression()?
         };
@@ -226,9 +218,6 @@ impl Parser {
 
     fn parse_say(&mut self) -> Result<Stmt, String> {
         self.expect(Token::Say)?;
-        // say: "hello"
-        // The colon is separate from the Say token in lexer
-        // So we need to expect the colon after Say
         self.expect(Token::Colon)?;
 
         let expr = self.parse_expression()?;
@@ -408,7 +397,6 @@ impl Parser {
                 _ => return Err("Expected method name in trait".to_string()),
             };
 
-            // Optional params (ignored for now): ": a, b"
             if matches!(self.current(), Some(Token::Colon)) {
                 self.advance();
                 while matches!(self.current(), Some(Token::Identifier(_))) {
@@ -421,7 +409,6 @@ impl Parser {
                 }
             }
 
-            // Require semicolon between method signatures.
             self.expect(Token::Semicolon)?;
             methods.push(method_name);
         }
@@ -438,7 +425,6 @@ impl Parser {
             _ => return Err("Expected trait name after impl".to_string()),
         };
 
-        // Syntax: impl Trait for Type { ... }
         self.expect(Token::For)?;
         let type_name = match self.advance() {
             Some(Token::Identifier(s)) => s,
@@ -665,7 +651,6 @@ impl Parser {
                     self.advance();
                     match self.advance() {
                         Some(Token::Identifier(member)) => {
-                            // Check if this is a function call (next token is colon)
                             if matches!(self.current(), Some(Token::Colon)) {
                                 self.advance();
                                 let mut args = Vec::new();
@@ -693,8 +678,6 @@ impl Parser {
 
                                 expr = Expr::MethodCall(Box::new(expr), member, args);
                             } else {
-                                // For now, treat as member access
-                                // We'll need to handle function calls without parameters differently
                                 expr = Expr::Member(Box::new(expr), member);
                             }
                         }
@@ -732,7 +715,6 @@ impl Parser {
                 let id = name.clone();
                 self.advance();
 
-                // Check if this is a function call
                 if matches!(self.current(), Some(Token::Colon)) {
                     self.advance();
                     let mut args = Vec::new();

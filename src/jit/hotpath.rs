@@ -1,25 +1,17 @@
-//! Hotpath Optimizer - Identifies and optimizes frequently executed code paths
-//!
-//! Tracks execution frequency and applies aggressive optimizations to hot code
 #![allow(dead_code)]
 
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct HotpathTracker {
-    // Function call counts
     function_counts: HashMap<String, u64>,
 
-    // Basic block execution counts
     block_counts: HashMap<BlockId, u64>,
 
-    // Loop iteration counts
     loop_counts: HashMap<LoopId, u64>,
 
-    // Variable access patterns
     var_access: HashMap<String, AccessPattern>,
 
-    // Thresholds for hotness
     hot_function_threshold: u64,
     hot_block_threshold: u64,
     hot_loop_threshold: u64,
@@ -68,22 +60,18 @@ impl HotpathTracker {
         Self::new(100, 1000, 10000)
     }
 
-    // Track function call
     pub fn record_function_call(&mut self, name: &str) {
         *self.function_counts.entry(name.to_string()).or_insert(0) += 1;
     }
 
-    // Track block execution
     pub fn record_block_execution(&mut self, block_id: BlockId) {
         *self.block_counts.entry(block_id).or_insert(0) += 1;
     }
 
-    // Track loop iteration
     pub fn record_loop_iteration(&mut self, loop_id: LoopId) {
         *self.loop_counts.entry(loop_id).or_insert(0) += 1;
     }
 
-    // Track variable access
     pub fn record_var_read(&mut self, var: &str, time: u64) {
         let pattern = self
             .var_access
@@ -112,7 +100,6 @@ impl HotpathTracker {
         pattern.last_access_time = time;
     }
 
-    // Get hotpath information
     pub fn get_hotpaths(&self) -> HotpathInfo {
         let hot_functions: Vec<String> = self
             .function_counts
@@ -152,7 +139,6 @@ impl HotpathTracker {
         }
     }
 
-    // Check if function should be recompiled with optimizations
     pub fn should_optimize_function(&self, name: &str) -> bool {
         self.function_counts
             .get(name)
@@ -160,7 +146,6 @@ impl HotpathTracker {
             .unwrap_or(false)
     }
 
-    // Check if variable should be kept in register
     pub fn should_pin_to_register(&self, var: &str) -> bool {
         self.var_access
             .get(var)
@@ -168,7 +153,6 @@ impl HotpathTracker {
             .unwrap_or(false)
     }
 
-    // Reset counters (for testing or periodic reset)
     pub fn reset(&mut self) {
         self.function_counts.clear();
         self.block_counts.clear();
@@ -176,7 +160,6 @@ impl HotpathTracker {
         self.var_access.clear();
     }
 
-    // Get statistics
     pub fn stats(&self) -> HotpathStats {
         HotpathStats {
             total_functions: self.function_counts.len(),
@@ -199,7 +182,6 @@ pub struct HotpathStats {
     pub hot_loops: usize,
 }
 
-/// Hotpath-specific optimizations
 pub struct HotpathOptimizer {
     tracker: HotpathTracker,
 }
@@ -209,7 +191,6 @@ impl HotpathOptimizer {
         Self { tracker }
     }
 
-    /// Determine optimal register allocation for hot variables
     pub fn optimize_register_allocation(&self, variables: &[String]) -> Vec<(String, bool)> {
         variables
             .iter()
@@ -220,16 +201,13 @@ impl HotpathOptimizer {
             .collect()
     }
 
-    /// Suggest inline candidates based on call frequency
     pub fn suggest_inline_candidates(&self) -> Vec<String> {
         let hotpaths = self.tracker.get_hotpaths();
 
-        // Functions called frequently but not too large should be inlined
         hotpaths
             .hot_functions
             .iter()
             .filter(|name| {
-                // Could add size check here
                 self.tracker
                     .function_counts
                     .get(*name)
@@ -240,7 +218,6 @@ impl HotpathOptimizer {
             .collect()
     }
 
-    /// Determine if loop should be unrolled
     pub fn should_unroll_loop(&self, loop_id: LoopId, trip_count: Option<usize>) -> bool {
         let is_hot = self
             .tracker
@@ -249,7 +226,6 @@ impl HotpathOptimizer {
             .map(|&count| count >= self.tracker.hot_loop_threshold)
             .unwrap_or(false);
 
-        // Unroll if hot and has known small trip count
         is_hot && trip_count.map(|c| c <= 8).unwrap_or(false)
     }
 }

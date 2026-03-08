@@ -1,7 +1,5 @@
 #!/bin/bash
 
-# CoRe Language Installation Script
-# This script installs the CoRe language executables to ~/.local/bin
 
 CORE_DIR="/Users/ishan/IdeaProjects/CoRe Main/CoRe Backup V1.0 copy"
 INSTALL_DIR="$HOME/.local/bin"
@@ -9,10 +7,8 @@ RELEASE_DIR="$CORE_DIR/target/release"
 
 echo "🔧 Installing CoRe Language Executables..."
 
-# Create install directory if it doesn't exist
 mkdir -p "$INSTALL_DIR"
 
-# Copy executables
 echo "📦 Copying executables to $INSTALL_DIR..."
 
 if [ -f "$RELEASE_DIR/forge" ]; then
@@ -50,7 +46,6 @@ else
     echo "❌ test_parser not found"
 fi
 
-# Make sure all executables are executable
 chmod +x "$INSTALL_DIR/forge" "$INSTALL_DIR/fforge" "$INSTALL_DIR/forger" "$INSTALL_DIR/metroman" "$INSTALL_DIR/test_parser" 2>/dev/null
 
 echo ""

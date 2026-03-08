@@ -1,11 +1,9 @@
 #!/bin/bash
 
-# CoRe Language WebAssembly Build Script
 set -e
 
 echo "🌟 Building CoRe Language for WebAssembly..."
 
-# Check if wasm-pack is installed
 if ! command -v wasm-pack &> /dev/null; then
     echo "❌ wasm-pack not found!"
     echo "📦 Installing wasm-pack..."
@@ -13,7 +11,6 @@ if ! command -v wasm-pack &> /dev/null; then
     echo "✅ wasm-pack installed!"
 fi
 
-# Check if we're in the right directory
 if [ ! -f "Cargo.toml" ]; then
     echo "❌ Error: Cargo.toml not found. Run this script from the wasm/ directory."
     exit 1
@@ -21,7 +18,6 @@ fi
 
 echo "🔨 Building WebAssembly module..."
 
-# Build the WebAssembly package
 wasm-pack build --target web --out-dir pkg
 
 if [ $? -eq 0 ]; then

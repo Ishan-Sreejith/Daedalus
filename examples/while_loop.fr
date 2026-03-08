@@ -1,4 +1,3 @@
-// While loop example
 var count: 0
 while count < 10 {
     say: count

@@ -51,7 +51,6 @@ fn main() {
     }
     
     if args.len() > 1 {
-        // Mode: Run file directly (assembly or CoRe IR)
         if args.len() == 3 && (args[1] == "--ir" || args[1] == "--coreir") {
             run_core_ir_file(&args[2]);
             return;
@@ -240,7 +239,6 @@ fn handle_command(vm: &mut VM, cmd: &str) -> Result<bool, String> {
             println!("{}\n", "===============".bright_cyan());
         }
         "exec" | "e" => {
-            // Execute a single instruction directly
             let instr = parts[1..].join(" ");
             vm.append_instruction(&instr)?;
             vm.pc = vm.program.len() as i64 - 1;
@@ -257,7 +255,6 @@ fn handle_command(vm: &mut VM, cmd: &str) -> Result<bool, String> {
             return Ok(false);
         }
         _ => {
-            // Try to execute as assembly instruction
             vm.append_instruction(cmd)?;
             vm.pc = vm.program.len() as i64 - 1;
             match vm.step() {

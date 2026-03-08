@@ -1,5 +1,5 @@
-/* tslint:disable */
-/* eslint-disable */
+
+
 export const memory: WebAssembly.Memory;
 export const rt_release: (a: bigint) => void;
 export const rt_map_set: (a: bigint, b: bigint, c: bigint) => void;

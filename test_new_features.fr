@@ -1,21 +1,16 @@
-// Comprehensive test of all new built-in functions
-// Math functions  
 say: "=== Math Functions ==="
 say: abs(-5)
 say: min(10, 3)
 say: max(10, 3)
 say: pow(2, 3)
 say: sqrt(16)
-// String functions
 say: "=== String Functions ==="
 var text: "Hello World"
 say: toupper(text)
 say: tolower(text)
-// Collection functions
 say: "=== Collection Functions ==="
 var nums: [3, 1, 4]
 say: nums
-// Type conversion
 say: "=== Type Conversion ==="
 say: str(123)
 say: num("456")

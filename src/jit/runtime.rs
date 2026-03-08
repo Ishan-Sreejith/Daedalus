@@ -1,7 +1,3 @@
-//! JIT Runtime Library
-//!
-//! This module contains helper functions written in Rust that are called by
-//! JIT-compiled code. This acts as the "Standard Library" for the JIT.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -23,13 +19,8 @@ pub enum GcData {
     File(Option<File>), // Option to allow closing
 }
 
-// The raw pointer passed to JIT is *const RefCell<GcData> derived from Rc
 type GcPtr = *const RefCell<GcData>;
 
-// --- Exception Handling Context ---
-// We need to save CPU state (FP, SP, LR) to jump back to catch blocks.
-// Since we can't easily access registers from Rust, we'll rely on the JIT
-// to pass these values to `rt_push_try`.
 
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
@@ -117,7 +108,6 @@ fn format_value(val: EncodedValue) -> String {
     }
 }
 
-// --- GC Management ---
 
 #[no_mangle]
 pub extern "C" fn rt_retain(val: EncodedValue) {
@@ -139,7 +129,6 @@ pub extern "C" fn rt_release(val: EncodedValue) {
     }
 }
 
-// --- Allocation ---
 
 #[no_mangle]
 pub extern "C" fn rt_alloc_string(buffer: *const u8, len: u64) -> EncodedValue {
@@ -171,11 +160,9 @@ pub extern "C" fn rt_alloc_float(val: f64) -> EncodedValue {
     rc_to_ptr(rc)
 }
 
-// --- Generic Ops (EncodedValue) ---
 
 #[no_mangle]
 pub extern "C" fn rt_add(a: EncodedValue, b: EncodedValue) -> EncodedValue {
-    // string concat if either side is non-int (string/float/map/list/etc)
     if !is_int(a) || !is_int(b) {
         let s = get_string(a) + &get_string(b);
         let rc = Rc::new(RefCell::new(GcData::String(s)));
@@ -288,7 +275,6 @@ pub extern "C" fn rt_ne(a: EncodedValue, b: EncodedValue) -> EncodedValue {
     encode_int(if decode_int(eq) == 0 { 1 } else { 0 })
 }
 
-// --- Operations ---
 
 #[no_mangle]
 pub extern "C" fn rt_print(val: EncodedValue) {
@@ -381,7 +367,6 @@ pub extern "C" fn rt_to_num(val: EncodedValue) -> EncodedValue {
     }
 }
 
-// --- Float Ops ---
 
 fn get_float(val: EncodedValue) -> f64 {
     if is_int(val) {
@@ -469,7 +454,6 @@ pub extern "C" fn rt_contains(haystack: EncodedValue, needle: EncodedValue) -> E
     encode_int(if h.contains(&n) { 1 } else { 0 })
 }
 
-// --- List Ops ---
 
 #[no_mangle]
 pub extern "C" fn rt_list_push(list_ptr: EncodedValue, item: EncodedValue) {
@@ -578,7 +562,6 @@ pub extern "C" fn rt_list_pop(list_ptr: EncodedValue) -> EncodedValue {
     res
 }
 
-// --- Map Ops ---
 
 fn val_to_key(val: EncodedValue) -> String {
     if is_int(val) {
@@ -693,7 +676,6 @@ pub extern "C" fn rt_map_values(map_ptr: EncodedValue) -> EncodedValue {
     rc_to_ptr(list_rc)
 }
 
-// --- Generic indexing ---
 
 #[no_mangle]
 pub extern "C" fn rt_index_get(container: EncodedValue, key: EncodedValue) -> EncodedValue {
@@ -753,7 +735,6 @@ pub extern "C" fn rt_range(start: EncodedValue, end: EncodedValue) -> EncodedVal
     rc_to_ptr(Rc::new(RefCell::new(GcData::List(vals))))
 }
 
-// --- File I/O ---
 
 #[no_mangle]
 pub extern "C" fn rt_file_open(path: EncodedValue) -> EncodedValue {
@@ -802,7 +783,6 @@ pub extern "C" fn rt_file_close(file_ptr: EncodedValue) {
     let _ = Rc::into_raw(rc);
 }
 
-// --- Exception Handling ---
 
 #[no_mangle]
 pub extern "C" fn rt_push_try(sp: u64, fp: u64, lr: u64) {
@@ -820,36 +800,15 @@ pub extern "C" fn rt_pop_try() {
 
 #[no_mangle]
 pub extern "C" fn rt_throw(val: EncodedValue) -> u64 {
-    // Save the error value
     rt_retain(val);
     LAST_ERROR.with(|last| *last.borrow_mut() = val);
 
-    // Find the nearest handler
     let handler = EXCEPTION_STACK.with(|stack| stack.borrow().last().copied());
 
     if let Some(h) = handler {
-        // We return the address of the handler.
-        // The JIT trampoline for throw will need to restore SP/FP and jump there.
-        // But wait, we can't easily restore SP/FP from here without assembly support.
-        // The JIT code calling this needs to handle the jump.
-        // We'll return the LR (handler address).
-        // The JIT wrapper for throw will:
-        // 1. Call rt_throw
-        // 2. If result is 0, exit (uncaught).
-        // 3. Else, MOV SP, <restored_sp>; MOV FP, <restored_fp>; BR x0
 
-        // Actually, we can't return multiple values easily.
-        // We'll return a pointer to the handler struct, or 0.
-        // The JIT will read SP/FP/LR from it.
-        // For simplicity, let's just return the LR and assume the JIT can't fully restore SP/FP yet
-        // without more complex assembly.
-        // BUT, if we don't restore SP, the stack is corrupt.
-        // So we MUST restore SP.
 
-        // Let's change strategy: rt_throw returns the ExceptionHandler struct (by pointer).
-        // We'll store it in a static slot and return pointer to it.
         h.lr // Just return address for now, assuming SP restoration is hard.
-             // This is a limitation: try/catch only works if SP doesn't change much or we accept leaks.
     } else {
         println!("Uncaught exception: ");
         rt_print(val);

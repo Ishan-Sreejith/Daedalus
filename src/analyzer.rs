@@ -44,13 +44,11 @@ impl Analyzer {
 
                 match &func.instructions[idx] {
                     IrInstr::Jump { .. } => {
-                        // Find target label
                     }
                     IrInstr::JumpIf { .. } => {
                         worklist.push(idx + 1);
                     }
                     IrInstr::Return { .. } => {
-                        // End of path
                     }
                     _ => {
                         worklist.push(idx + 1);
@@ -73,7 +71,6 @@ impl Analyzer {
         for (name, func) in &program.functions {
             let mut types: HashMap<String, ValueType> = HashMap::new();
 
-            // Initialize parameters as numbers (for now, assume numeric parameters)
             for param in &func.params {
                 types.insert(param.clone(), ValueType::Number);
             }
@@ -98,7 +95,6 @@ impl Analyzer {
                         if let (ValueType::Number, ValueType::Number) = (left_ty, right_ty) {
                             types.insert(dest.clone(), ValueType::Number);
                         } else if let (ValueType::String, ValueType::String) = (left_ty, right_ty) {
-                            // String concatenation for Add
                             if matches!(instr, IrInstr::Add { .. }) {
                                 types.insert(dest.clone(), ValueType::String);
                             } else {
@@ -108,7 +104,6 @@ impl Analyzer {
                                 ));
                             }
                         } else {
-                            // Don't error on unknown types (might be parameters)
                             types.insert(dest.clone(), ValueType::Number);
                         }
                     }
@@ -164,7 +159,6 @@ enum ValueType {
 
 #[allow(dead_code)]
 pub fn validate_stack_alignment(instructions: &[IrInstr]) -> Result<(), String> {
-    // ARM64 requires 16-byte stack alignment
     let stack_offset = 0;
 
     for instr in instructions {

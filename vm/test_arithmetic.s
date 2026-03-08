@@ -1,4 +1,3 @@
-// Simple arithmetic test
 mov x0, #10
 mov x1, #5
 add x2, x0, x1

@@ -1,6 +1,3 @@
-//! Phase 5 & 4: Register Allocation & Spilling
-//!
-//! Manages the mapping of variables to physical registers (x0-x7) or stack slots.
 #![allow(dead_code)]
 
 use std::collections::HashMap;
@@ -42,13 +39,9 @@ pub enum Location {
     Stack(i32), // Offset from FP (e.g., -8, -16)
 }
 
-/// Tracks which physical register holds which variable.
 pub struct RegisterMap {
-    /// variable name -> location
     pub var_map: HashMap<String, Location>,
-    /// register number -> is available? (x0-x7)
     reg_free: [bool; 8],
-    /// Current stack offset (starts at -16, grows down)
     stack_offset: i32,
 }
 
@@ -61,14 +54,11 @@ impl RegisterMap {
         }
     }
 
-    /// Allocate a location for a variable.
-    /// Tries registers first, then spills to stack.
     pub fn alloc(&mut self, var: &str) -> Result<Location, String> {
         if let Some(&loc) = self.var_map.get(var) {
             return Ok(loc);
         }
 
-        // Try to find a free register
         for i in 0..8 {
             if self.reg_free[i] {
                 self.reg_free[i] = false;
@@ -78,7 +68,6 @@ impl RegisterMap {
             }
         }
 
-        // Spill to stack
         let offset = self.stack_offset;
         self.stack_offset -= 8; // 8 bytes per slot
         let loc = Location::Stack(offset);
@@ -86,7 +75,6 @@ impl RegisterMap {
         Ok(loc)
     }
 
-    /// Deallocate a register.
     pub fn free(&mut self, loc: Location) {
         if let Location::Register(reg) = loc {
             if (reg as usize) < 8 {
@@ -95,12 +83,10 @@ impl RegisterMap {
         }
     }
 
-    /// Get the location for a variable.
     pub fn get(&self, var: &str) -> Option<Location> {
         self.var_map.get(var).copied()
     }
 
-    /// Clear all mappings (for, e.g., function boundaries)
     pub fn clear(&mut self) {
         self.var_map.clear();
         self.reg_free = [true; 8];
@@ -112,8 +98,6 @@ impl RegisterMap {
             return 0;
         }
 
-        // stack_offset tracks the next free slot below FP. With offsets like -16, -24, -32...
-        // The total space needed so that the lowest slot is within SP is: (-stack_offset) - 8.
         let used_i32 = (-self.stack_offset) - 8;
         if used_i32 <= 0 {
             return 0;
@@ -125,7 +109,6 @@ impl RegisterMap {
             used_i32 as u16
         };
 
-        // Keep 16-byte alignment for AAPCS64.
         let rem = bytes % 16;
         if rem != 0 {
             bytes = bytes.saturating_add(16 - rem);
@@ -135,7 +118,6 @@ impl RegisterMap {
     }
 }
 
-/// Extended encoder that handles spilling transparently.
 pub struct ArithmeticEncoder {
     buf: Vec<u8>,
 }
@@ -153,7 +135,6 @@ impl ArithmeticEncoder {
         self.buf.extend_from_slice(bytes);
     }
 
-    // --- Raw Instruction Emitters ---
 
     fn raw_ldr(&mut self, rt: u8, base: u8, offset: i32) {
         let base_reg = if base == 31 { Reg::SP } else { Reg::X(base) };
@@ -162,7 +143,6 @@ impl ArithmeticEncoder {
                 self.emit_u32_le(encode_ldur(Reg::X(rt), base_reg, off))
             }
             Ok(off) => {
-                // Offset doesn't fit LDUR imm9; compute address in scratch reg x12.
                 for instr in encode_mov64(Reg::X(12), off as i64 as u64) {
                     self.emit_u32_le(instr);
                 }
@@ -179,7 +159,6 @@ impl ArithmeticEncoder {
             if (-256..=255).contains(&off) {
                 self.emit_u32_le(encode_stur(Reg::X(rt), base_reg, off));
             } else {
-                // Offset doesn't fit STUR imm9; compute address in scratch reg x12.
                 for instr in encode_mov64(Reg::X(12), off as i64 as u64) {
                     self.emit_u32_le(instr);
                 }
@@ -189,62 +168,44 @@ impl ArithmeticEncoder {
         }
     }
 
-    // --- High-Level Emitters with Spilling Support ---
-    // We use x9, x10 as scratch registers for spilling if needed.
-    // x29 is FP.
 
-    /// Load a value from a Location into a physical register.
-    /// If loc is Register, moves it to `target_reg`.
-    /// If loc is Stack, loads it from the stack to `target_reg`.
     pub fn load_to_reg(&mut self, target_reg: u8, loc: Location) {
         match loc {
             Location::Register(r) => {
                 if r != target_reg {
-                    // MOV target, r
                     self.emit_u32_le(encode_add_imm(Reg::X(target_reg), Reg::X(r), 0));
                 }
             }
             Location::Stack(offset) => {
-                // LDR target, [FP, #offset]
                 self.raw_ldr(target_reg, 29, offset);
             }
         }
     }
 
-    /// Store a value from a physical register into a Location.
     pub fn store_from_reg(&mut self, src_reg: u8, loc: Location) {
         match loc {
             Location::Register(r) => {
                 if r != src_reg {
-                    // MOV r, src
                     self.emit_u32_le(encode_add_imm(Reg::X(r), Reg::X(src_reg), 0));
                 }
             }
             Location::Stack(offset) => {
-                // STR src, [FP, #offset]
                 self.raw_str(src_reg, 29, offset);
             }
         }
     }
 
-    // --- Operations ---
 
     pub fn emit_mov_imm(&mut self, dest: Location, imm: u16) {
-        // Load imm into x9 (scratch)
         self.emit_u32_le(encode_mov_imm(Reg::X(9), imm));
-        // Store x9 to dest
         self.store_from_reg(9, dest);
     }
 
     pub fn emit_mov(&mut self, dest: Location, src: Location) {
-        // Move from src to dest
-        // Load src into x9
         self.load_to_reg(9, src);
-        // Store x9 to dest
         self.store_from_reg(9, dest);
     }
 
-    // Add helper for raw register move (needed for manual register manipulation)
     pub fn emit_add_imm(&mut self, dest: u8, src: u8, imm: u16) {
         self.emit_u32_le(encode_add_imm(Reg::X(dest), Reg::X(src), imm));
     }
@@ -283,24 +244,9 @@ impl ArithmeticEncoder {
         self.emit_u32_le(encode_cmp_reg(Reg::X(9), Reg::X(10)));
     }
 
-    // CSET - Conditional Set
-    // Sets register to 1 if condition is true, 0 otherwise
     pub fn emit_cset(&mut self, dest: Location, cond: ConditionCode) {
-        // CSET Xd, cond is actually CSINC Xd, XZR, XZR, (invert cond)
-        // Encoding: 0x9A9F_07E0 | (cond << 12) | (dest_reg << 0)
-        // But simpler: use the CSET pseudo-instruction encoding
-        // CSET Rd, cond = CSINC Rd, XZR, XZR, !cond
-        // Base: 0x9A9F07E0, but we need proper encoding
 
-        // For simplicity, use a compare result approach:
-        // We already did CMP, flags are set
-        // CSET Xd, cond:
-        //   if cond true: Xd = 1
-        //   else: Xd = 0
 
-        // ARM64 CSET encoding:
-        // CSINC Xd, XZR, XZR, invert(cond)
-        // Which is: Xd = (cond) ? XZR + 1 : XZR = (cond) ? 1 : 0
 
         let inverted_cond = match cond {
             ConditionCode::Eq => 0b0001, // NE
@@ -311,14 +257,11 @@ impl ArithmeticEncoder {
             ConditionCode::Ge => 0b1011, // LT
         };
 
-        // CSINC: sf=1, op=0, S=0, Rm=11111, cond, op2=00, Rn=11111, Rd
-        // 1_0_0_11010100_11111_cond_00_11111_Rd
         let instr = 0x9A9F07E0 | (inverted_cond << 12) | (9u32 << 0); // Use x9 as temp
         self.emit_u32_le(instr);
         self.store_from_reg(9, dest);
     }
 
-    // Control Flow
     pub fn emit_b(&mut self, offset: i32) {
         self.emit_u32_le(encode_b(offset));
     }
@@ -335,7 +278,6 @@ impl ArithmeticEncoder {
         self.emit_u32_le(encode_b_gt(offset));
     }
 
-    // FFI
     pub fn emit_call(&mut self, addr: u64) {
         let instructions = encode_mov64(Reg::X(9), addr);
         for instr in instructions {
@@ -356,12 +298,10 @@ impl ArithmeticEncoder {
         self.emit_call(addr);
     }
 
-    // Helper to move a Location to a specific register (e.g., for args)
     pub fn move_to_phys_reg(&mut self, dest_phys: u8, src: Location) {
         self.load_to_reg(dest_phys, src);
     }
 
-    // Helper to move from a specific register to a Location (e.g. return val)
     pub fn move_from_phys_reg(&mut self, dest: Location, src_phys: u8) {
         self.store_from_reg(src_phys, dest);
     }

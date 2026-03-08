@@ -1,13 +1,7 @@
-//! Phase 11: Speculative Optimization & Deoptimization
-//!
-//! Scaffolding for speculative guards, PIC, OSR, tiered compilation, and escape analysis.
-//! This module provides data structures and minimal logic that can be wired into
-//! the JIT compiler once runtime type tags and profiling hooks are finalized.
 #![allow(dead_code)]
 
 use std::collections::{HashMap, HashSet};
 
-/// Runtime type tags for guard checks and inline caches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TypeTag {
     Int,
@@ -17,7 +11,6 @@ pub enum TypeTag {
     Unknown,
 }
 
-/// Tiered compilation levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tier {
     Baseline,
@@ -30,7 +23,6 @@ impl Default for Tier {
     }
 }
 
-/// Simple hot counter for calls/loops.
 #[derive(Debug, Default)]
 pub struct HotCounter {
     count: u64,
@@ -55,7 +47,6 @@ impl HotCounter {
     }
 }
 
-/// Profile data for a function or loop.
 #[derive(Debug)]
 pub struct JitProfile {
     call_counter: HotCounter,
@@ -104,20 +95,17 @@ impl JitProfile {
     }
 }
 
-/// Speculative guard for type checks.
 #[derive(Debug, Clone)]
 pub struct SpecGuard {
     pub expected: TypeTag,
     pub deopt: DeoptAction,
 }
 
-/// Deoptimization action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeoptAction {
     FallbackToVm,
 }
 
-/// Inline cache handler kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheHandler {
     IntAdd,
@@ -125,14 +113,12 @@ pub enum CacheHandler {
     SlowFallback,
 }
 
-/// A single PIC entry.
 #[derive(Debug, Clone)]
 pub struct PicEntry {
     pub ty: TypeTag,
     pub handler: CacheHandler,
 }
 
-/// Polymorphic Inline Cache (PIC) for a call site.
 #[derive(Debug, Default)]
 pub struct PolymorphicInlineCache {
     max_entries: usize,
@@ -169,7 +155,6 @@ impl PolymorphicInlineCache {
     }
 }
 
-/// On-Stack Replacement (OSR) plan for a hot loop.
 #[derive(Debug, Default)]
 pub struct OsrPlanner {
     loop_offsets: HashMap<String, usize>,
@@ -185,7 +170,6 @@ impl OsrPlanner {
     }
 }
 
-/// Escape analysis result for a function scope.
 #[derive(Debug, Default)]
 pub struct EscapeResult {
     pub escapes: HashSet<String>,
@@ -197,7 +181,6 @@ impl EscapeResult {
     }
 }
 
-/// Escape analysis stub.
 #[derive(Debug, Default)]
 pub struct EscapeAnalysis;
 

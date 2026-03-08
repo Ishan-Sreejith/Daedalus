@@ -4,7 +4,6 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::runtime::Runtime;
 
-/// JavaScript-style event loop for async operations
 #[allow(dead_code)]
 pub struct EventLoop {
     runtime: Runtime,
@@ -43,7 +42,6 @@ impl EventLoop {
     }
 }
 
-/// Task handle for async operations
 #[allow(dead_code)]
 pub struct Task<T> {
     inner: Pin<Box<dyn Future<Output = T> + Send>>,

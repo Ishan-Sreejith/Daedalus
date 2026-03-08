@@ -704,18 +704,14 @@ _get_index:
     ret
 
 _spawn:
-    // Async spawn not implemented in native codegen yet
     ret
 
 _await:
-    // Async await not implemented in native codegen yet
     ret
 
 _alloc_file:
-    // File allocation not implemented in native codegen yet
     mov x0, #0
     ret
 
 _close_file:
-    // File close not implemented in native codegen yet
     ret

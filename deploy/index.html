@@ -13,7 +13,7 @@
 
         body {
             font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #f3f4f6;
             color: #333;
             min-height: 100vh;
             display: flex;
@@ -30,13 +30,13 @@
         header {
             text-align: center;
             margin-bottom: 30px;
-            color: white;
+            color: #1f2937;
         }
 
         h1 {
             font-size: 2.5em;
             margin-bottom: 10px;
-            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            
         }
 
         .subtitle {
@@ -58,7 +58,7 @@
             padding: 5px 12px;
             border-radius: 20px;
             font-size: 0.9em;
-            backdrop-filter: blur(10px);
+            
         }
 
         .editor-section {
@@ -90,8 +90,8 @@
         }
 
         button {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            background: #f3f4f6;
+            color: #1f2937;
             border: none;
             padding: 10px 20px;
             border-radius: 25px;
@@ -117,15 +117,15 @@
         }
 
         .btn-secondary {
-            background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
+            background: #4a5568;
         }
 
         .btn-success {
-            background: linear-gradient(135deg, #00b894 0%, #00a085 100%);
+            background: #2f855a;
         }
 
         .btn-danger {
-            background: linear-gradient(135deg, #e17055 0%, #d63031 100%);
+            background: #c53030;
         }
 
         #code-editor {
@@ -223,7 +223,7 @@
         .footer {
             text-align: center;
             padding: 20px;
-            color: rgba(255, 255, 255, 0.8);
+            color: #4b5563;
             font-size: 0.9em;
         }
 
@@ -235,7 +235,7 @@
         }
 
         .example-btn {
-            background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
+            background: #4a5568;
             font-size: 0.85em;
             padding: 8px 15px;
         }
@@ -273,20 +273,20 @@
 <body>
     <div class="container">
         <header>
-            <h1>🔥 CoRe Language</h1>
+            <h1>CoRe Language</h1>
             <div class="subtitle">WebAssembly Edition - Run CoRe code directly in your browser!</div>
             <div class="features">
-                <div class="feature-tag">🚀 Real-time Execution</div>
-                <div class="feature-tag">⚡ WebAssembly Powered</div>
-                <div class="feature-tag">🎯 25+ Built-in Functions</div>
-                <div class="feature-tag">🔧 Enhanced Collections</div>
-                <div class="feature-tag">💡 Browser Ready</div>
+                <div class="feature-tag">Real-time Execution</div>
+                <div class="feature-tag">WebAssembly Powered</div>
+                <div class="feature-tag">25+ Built-in Functions</div>
+                <div class="feature-tag">Enhanced Collections</div>
+                <div class="feature-tag">Browser Ready</div>
             </div>
         </header>
 
         <div class="editor-section">
             <div class="editor-header">
-                <div class="editor-title">📝 Code Editor</div>
+                <div class="editor-title">Code Editor</div>
                 <div class="controls">
                     <div class="examples">
                         <button class="example-btn" onclick="loadExample('hello')">Hello World</button>
@@ -295,12 +295,11 @@
                         <button class="example-btn" onclick="loadExample('functions')">Functions</button>
                     </div>
                     <button onclick="clearEditor()">Clear</button>
-                    <button class="btn-success" onclick="runCode()" id="run-btn">▶️ Run Code</button>
+                    <button class="btn-success" onclick="runCode()" id="run-btn">Run Code</button>
                 </div>
             </div>
 
             <textarea id="code-editor" placeholder="// Welcome to CoRe Language!
-// Type your code here or use the examples above.
 
 var greeting: &quot;Hello, WebAssembly!&quot;
 say: greeting"></textarea>
@@ -308,7 +307,7 @@ say: greeting"></textarea>
 
         <div class="output-section">
             <div class="output-header">
-                <div class="output-title">📺 Output</div>
+                <div class="output-title">Output</div>
                 <div class="controls">
                     <button class="btn-secondary" onclick="clearOutput()">Clear Output</button>
                 </div>
@@ -327,37 +326,32 @@ say: greeting"></textarea>
     </div>
 
     <footer class="footer">
-        <p>CoRe Language WebAssembly Edition | Built with Rust 🦀 & WebAssembly 🕸️</p>
+        <p>CoRe Language WebAssembly Edition | Built with Rust & WebAssembly </p>
     </footer>
 
     <script type="module">
         let coreEngine = null;
 
-        // Import the WebAssembly module
         import('./pkg/forge.js').then(async (module) => {
             await module.default();
 
-            // Initialize the CoRe engine
             coreEngine = new module.CoReEngine();
 
-            // Update status
             document.getElementById('status-dot').classList.add('ready');
             document.getElementById('status-text').textContent = 'CoRe Engine Ready';
             document.getElementById('version-info').textContent = coreEngine.get_version();
 
-            // Load sample code
             document.getElementById('code-editor').value = module.get_sample_code();
 
-            console.log('🚀 CoRe Language WebAssembly module loaded successfully!');
+            console.log('CoRe Language WebAssembly module loaded successfully!');
             console.log('Features:', JSON.parse(coreEngine.get_features()));
         }).catch(error => {
             console.error('Failed to load CoRe WebAssembly module:', error);
             document.getElementById('status-text').textContent = 'Failed to load engine';
             document.getElementById('output').textContent =
-                `❌ Error loading CoRe Engine: ${error.message}\n\nPlease refresh the page and try again.`;
+                `Error loading CoRe Engine: ${error.message}\n\nPlease refresh the page and try again.`;
         });
 
-        // Make functions globally available
         window.runCode = function() {
             if (!coreEngine) {
                 alert('CoRe Engine is not ready yet. Please wait a moment and try again.');
@@ -370,7 +364,6 @@ say: greeting"></textarea>
                 return;
             }
 
-            // Update status to running
             const statusDot = document.getElementById('status-dot');
             const statusText = document.getElementById('status-text');
             const runBtn = document.getElementById('run-btn');
@@ -378,21 +371,20 @@ say: greeting"></textarea>
             statusDot.className = 'indicator-dot running';
             statusText.textContent = 'Executing...';
             runBtn.disabled = true;
-            runBtn.textContent = '⏳ Running...';
+            runBtn.textContent = 'Running...';
 
             try {
                 const result = coreEngine.execute(code);
                 document.getElementById('output').textContent = result;
             } catch (error) {
-                document.getElementById('output').textContent = `❌ Runtime Error: ${error.message}`;
+                document.getElementById('output').textContent = `Runtime Error: ${error.message}`;
                 console.error('Execution error:', error);
             }
 
-            // Reset status
             statusDot.className = 'indicator-dot ready';
             statusText.textContent = 'CoRe Engine Ready';
             runBtn.disabled = false;
-            runBtn.textContent = '▶️ Run Code';
+            runBtn.textContent = 'Run Code';
         };
 
         window.clearEditor = function() {
@@ -411,7 +403,7 @@ var user: "WebAssembly User"
 var message: greeting + " Welcome, " + user + "!"
 
 say: message
-say: "🚀 Running in your browser via WebAssembly!"`,
+say: "Running in your browser via WebAssembly!"`,
 
                 math: `// Math and Lists Example
 var numbers: [1, 2, 3, 4, 5]
@@ -457,7 +449,7 @@ var passing: 80
 var passed: 0
 var failed: 0
 
-say: "📊 Grade Analysis"
+say: "Grade Analysis"
 say: "Passing score: " + str(passing)
 say: "\\nStudent Scores:"
 
@@ -477,7 +469,7 @@ while k < len(scores) {
     k: k + 1
 }
 
-say: "\\n📈 Summary:"
+say: "\\nSummary:"
 say: "Passed: " + str(passed) + " students"
 say: "Failed: " + str(failed) + " students"
 say: "Pass rate: " + str((passed * 100) / (passed + failed)) + "%"`
@@ -488,7 +480,6 @@ say: "Pass rate: " + str((passed * 100) / (passed + failed)) + "%"`
             }
         };
 
-        // Add keyboard shortcut for running code
         document.addEventListener('keydown', function(event) {
             if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
                 event.preventDefault();
@@ -496,7 +487,6 @@ say: "Pass rate: " + str((passed * 100) / (passed + failed)) + "%"`
             }
         });
 
-        // Auto-resize textarea
         const textarea = document.getElementById('code-editor');
         textarea.addEventListener('input', function() {
             this.style.height = 'auto';

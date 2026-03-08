@@ -1,5 +1,4 @@
 #!/bin/bash
-#  Installation script for CoRe language binaries
 
 set -e
 
@@ -10,13 +9,10 @@ INSTALL_DIR="${HOME}/.local/bin"
 echo "→ Installing CoRe language binaries to $INSTALL_DIR..."
 echo ""
 
-# Create install directory
 mkdir -p "$INSTALL_DIR"
 
-# List of binaries to install
 BINARIES=("forge" "core" "fforge" "forger" "metroman")
 
-# Check if binaries exist
 for bin in "${BINARIES[@]}"; do
     if [ ! -f "$RELEASE_DIR/$bin" ]; then
         echo "⚠ Binary '$bin' not found in $RELEASE_DIR"
@@ -25,7 +21,6 @@ for bin in "${BINARIES[@]}"; do
     fi
 done
 
-# Copy and make executable
 for bin in "${BINARIES[@]}"; do
     cp "$RELEASE_DIR/$bin" "$INSTALL_DIR/$bin"
     chmod +x "$INSTALL_DIR/$bin"

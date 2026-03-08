@@ -1,6 +1,4 @@
 #!/bin/bash
-# JIT Test Verification Script
-# Run all tests to verify the is_map fix and language features
 
 cd "/Users/ishan/IdeaProjects/CoRe Main/CoRe Backup V1.0 copy"
 
@@ -10,7 +8,6 @@ echo "║                   All Tests with Verification Steps                   
 echo "╚════════════════════════════════════════════════════════════════════════════╝"
 echo ""
 
-# Step 1: Build
 echo "[STEP 1] Building JIT Compiler..."
 cargo build 2>&1 > /tmp/build.log
 if [ $? -ne 0 ]; then
@@ -23,7 +20,6 @@ fi
 echo "✅ Build succeeded"
 echo ""
 
-# Step 2: Test each feature
 PASS=0
 FAIL=0
 
@@ -59,10 +55,8 @@ test_feature() {
 echo "[STEP 2] Testing Language Features..."
 echo ""
 
-# TIER 1: Core Features
 echo "Tier 1: Core Features"
 
-# Create test files
 cat > /tmp/test_vars.fr << 'EOF'
 var x: 5
 say: x

@@ -22,58 +22,44 @@ use std::process::Command;
 #[command(about = "CoRe Language Compiler", long_about = None)]
 #[cfg(not(target_arch = "wasm32"))]
 struct Cli {
-    /// Source file to compile
     file: Option<String>,
 
-    /// Run using the Rust interpreter (direct execution)
     #[arg(short = 'r', long = "rust")]
     rust: bool,
 
-    /// Force direct execution (interpreter) mode (legacy)
     #[arg(short = 'd', long = "direct")]
     direct: bool,
 
-    /// Native execution mode (ARM64)
     #[arg(short, long)]
     native: bool,
 
-    /// Run using the ARM64 VM (default)
     #[arg(short = 'v', long = "vm")]
     vm: bool,
 
-    /// Assembly VM execution mode (legacy)
     #[arg(short = 'a', long)]
     asm: bool,
 
-    /// Show detailed compiler progress logs
     #[arg(short, long)]
     info: bool,
 
-    /// Build and link without running
     #[arg(short, long)]
     build: bool,
 
-    /// Dump syntax mapping to syntax.fr
     #[arg(long)]
     out: bool,
 
-    /// Load syntax mapping from syntax.fr and rebuild
     #[arg(long = "in")]
     in_syntax: bool,
 
-    /// Install the compiler to the system path
     #[arg(long)]
     install: bool,
 
-    /// Clean up generated files
     #[arg(long)]
     clean: bool,
 
-    /// Run using the JIT pipeline
     #[arg(short = 'j', long = "jit")]
     jit: bool,
 
-    /// Enable debug mode with timing information
     #[arg(short = 'D', long = "debug")]
     debug: bool,
 }
@@ -113,7 +99,6 @@ fn resolve_exec_mode(cli: &Cli) -> Result<ExecMode, String> {
     } else if wants_direct {
         Ok(ExecMode::Direct)
     } else {
-        // Default execution mode: VM
         Ok(ExecMode::Vm)
     }
 }
@@ -124,7 +109,6 @@ fn main() {
     let verbose = cli.info;
     let debug = cli.debug;
 
-    // Initialize debug timer
     let timer = debug_timer::DebugTimer::new(debug);
 
     let exec_mode = resolve_exec_mode(&cli).unwrap_or_else(|e| {
@@ -132,7 +116,6 @@ fn main() {
         std::process::exit(2);
     });
 
-    // Handle syntax dump/load (no source file required)
     if cli.out {
         let _phase = timer.phase("Syntax Dump");
         let mapping = meta::syntax_dump::SyntaxMapping::from_compiler();
@@ -168,16 +151,13 @@ fn main() {
         return;
     }
 
-    // Handle install command
     if cli.install {
         let current_exe = std::env::current_exe().expect("Failed to get current executable path");
         let bin_dir = current_exe.parent().expect("Failed to get bin directory");
 
-        // Try ~/.local/bin first (no sudo needed), fallback to /usr/local/bin
         let home_dir = std::env::var("HOME").ok();
         let install_dir = if let Some(home) = home_dir {
             let local_bin = std::path::PathBuf::from(home).join(".local/bin");
-            // Create ~/.local/bin if it doesn't exist
             if !local_bin.exists() {
                 if let Err(e) = fs::create_dir_all(&local_bin) {
                     eprintln!("⚠ Could not create ~/.local/bin: {}", e);
@@ -192,7 +172,6 @@ fn main() {
             std::path::PathBuf::from("/usr/local/bin")
         };
 
-        // Create /usr/local/bin if it doesn't exist and we're using it
         if install_dir == std::path::PathBuf::from("/usr/local/bin") && !install_dir.exists() {
             if let Err(e) = fs::create_dir_all(&install_dir) {
                 eprintln!("✗ Could not create /usr/local/bin: {}", e);
@@ -213,7 +192,6 @@ fn main() {
         let target_forger = install_dir.join("forger");
         let target_metroman = install_dir.join("metroman");
 
-        // Install forge (skip self-copy; copying a file onto itself can corrupt it).
         let same_forge = fs::canonicalize(&current_exe)
             .ok()
             .zip(fs::canonicalize(&target_forge).ok())
@@ -241,7 +219,6 @@ fn main() {
             }
         }
 
-        // Install core, fforge, forger (if present)
         let extra_bins = [
             ("core", &target_core),
             ("fforge", &target_fforge),
@@ -273,7 +250,6 @@ fn main() {
             }
         }
 
-        // Install metroman
         let metroman_exe = bin_dir.join("metroman");
         if metroman_exe.exists() {
             let same_metroman = fs::canonicalize(&metroman_exe)
@@ -306,7 +282,6 @@ fn main() {
             eprintln!("  Make sure to run 'cargo build --release' first.");
         }
 
-        // Print PATH instructions
         println!();
         println!("✓ Installation complete!");
         if install_dir.to_str().unwrap().contains(".local") {
@@ -325,7 +300,6 @@ fn main() {
         return;
     }
 
-    // Handle clean command
     if cli.clean {
         println!("→ Cleaning up generated files...");
         let files_to_clean = vec!["main.s", "main.o", "main"];
@@ -337,19 +311,11 @@ fn main() {
                 }
             }
         }
-        // Also clean up any .s or .o files matching *.s or *.o in current dir
         if let Ok(entries) = fs::read_dir(".") {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if let Some(ext) = path.extension() {
                     if ext == "s" || ext == "o" {
-                        // Don't delete source files if they happen to have these extensions (unlikely for .s/.o but safe to check)
-                        // Actually, .s is assembly, .o is object. Safe to delete.
-                        // But let's be careful not to delete essential files if any.
-                        // The user asked to delete "assembly and executable files like test.main.s, test_main"
-                        // Let's just stick to the known generated ones or patterns.
-                        // For now, just the specific ones is safer, or maybe files ending in .s/.o that match a source file name?
-                        // Let's just clean the common ones.
                     }
                 }
             }
@@ -358,7 +324,6 @@ fn main() {
         return;
     }
 
-    // Require a source file
     let source_file = match cli.file {
         Some(f) => f,
         None => {
@@ -372,7 +337,6 @@ fn main() {
         }
     };
 
-    // Read source code with timing
     let source = debug_time!(timer, "File Reading", {
         match fs::read_to_string(&source_file) {
             Ok(s) => {
@@ -389,7 +353,6 @@ fn main() {
         }
     });
 
-    // Lexical analysis with timing
     let tokens = debug_time!(timer, "Lexical Analysis", {
         if verbose {
             println!("→ Lexing...");
@@ -416,7 +379,6 @@ fn main() {
         }
     });
 
-    // Parsing with timing
     let program = debug_time!(timer, "Parsing", {
         if verbose {
             println!("→ Parsing...");
@@ -430,7 +392,6 @@ fn main() {
                 p
             },
             Err(e) => {
-                // Enhanced error reporting with file context
                 if let Some(byte_pos) = e
                     .split("at byte ")
                     .nth(1)
@@ -454,7 +415,6 @@ fn main() {
                         diagnostics::Diagnostic::error(e.split(" at byte").next().unwrap_or(&e))
                             .at(line, col);
 
-                    // Enhanced suggestions based on error content
                     if e.contains("Expected Colon") {
                         diag.suggestion = Some("Missing ':' after command or declaration".to_string());
                     } else if e.contains("Unexpected token: Some(Identifier") {
@@ -474,7 +434,6 @@ fn main() {
         }
     });
 
-    // IR generation with timing
     let ir_program = debug_time!(timer, "IR Generation", {
         if verbose {
             println!("→ Generating IR...");
@@ -498,7 +457,6 @@ fn main() {
         }
     });
 
-    // Static analysis with timing
     let _analyzer = debug_time!(timer, "Static Analysis", {
         if verbose {
             println!("→ Analyzing...");
@@ -513,7 +471,6 @@ fn main() {
             std::process::exit(1);
         }
 
-        // Show warnings
         for warning in analyzer.get_warnings() {
             if verbose {
                 println!("⚠ Warning: {}", warning);
@@ -528,7 +485,6 @@ fn main() {
         analyzer
     });
 
-    // Execute based on mode
     match exec_mode {
         ExecMode::Native => {
             debug_time!(timer, "Native Compilation", {
@@ -788,7 +744,6 @@ fn main() {
         }
     }
 
-    // Print total execution time if debug mode is enabled
     timer.print_total("execution");
 }
 
@@ -889,7 +844,6 @@ fn find_or_build_arm64vm() -> Result<Command, String> {
         }
     }
 
-    // If we're in the repo and vm/ exists, try building it.
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     let vm_manifest = cwd.join("vm/Cargo.toml");
     if vm_manifest.exists() {
@@ -908,13 +862,9 @@ fn find_or_build_arm64vm() -> Result<Command, String> {
         return Err("arm64vm build failed".to_string());
     }
 
-    // Final fallback: PATH
     Ok(Command::new("arm64vm"))
 }
 
-// WebAssembly main function (does nothing since we use exported functions)
 #[cfg(target_arch = "wasm32")]
 fn main() {
-    // WebAssembly builds use the exported functions in wasm.rs
-    // This main function is just to satisfy the compiler
 }

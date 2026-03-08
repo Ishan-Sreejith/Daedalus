@@ -1,4 +1,3 @@
-// try/catch + throw (same-function only)
 
 say: "before"
 

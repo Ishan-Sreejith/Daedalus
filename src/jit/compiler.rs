@@ -1,13 +1,3 @@
-//! JIT Compiler Module
-//!
-//! Low-level ARM64 JIT that lowers IR to machine code.
-//!
-//! This version uses the same `EncodedValue` model as `jit::runtime`:
-//! - tagged ints (`(n<<1)|1`)
-//! - `Rc<RefCell<GcData>>` pointers for heap values
-//!
-//! Most operations are implemented by calling `rt_*` helpers to keep the
-//! machine-code surface area small and correct.
 
 use crate::ir::{IrFunction, IrInstr, IrValue};
 use crate::jit::branching::{BranchKind, LabelManager};
@@ -86,14 +76,12 @@ fn emit_call3(
     emit_restore_call_regs(emit);
 }
 
-/// A JIT compiler that generates machine code from IR.
 pub struct JitCompiler<'a> {
     regmap: RegisterMap,
     labels: LabelManager,
     context: &'a mut JitContext,
     locals: HashSet<String>,
 
-    // Existing components (not fully wired yet, but kept for future work).
     profile: JitProfile,
     symbol_table: SymbolTable,
     memory_table: MemoryTable,
@@ -208,7 +196,6 @@ impl<'a> JitCompiler<'a> {
         let rt_not = runtime::rt_not as *const () as u64;
         let rt_is_truthy = runtime::rt_is_truthy as *const () as u64;
 
-        // Pre-allocate all destinations for stable stack frame sizing.
         for instr in instrs {
             let maybe_dest: Option<&str> = match instr {
                 IrInstr::LoadConst { dest, .. }
@@ -254,11 +241,6 @@ impl<'a> JitCompiler<'a> {
             emit.emit_u32_le(encode_sub_imm(Reg::SP, Reg::SP, frame_bytes));
         }
 
-        // Initialize locals/temps to 0 so teardown `rt_release` is safe even for values that are
-        // only assigned on some control-flow paths (e.g. if/else).
-        //
-        // IMPORTANT: when compiling a function, x0.. are used for incoming parameters. Don't
-        // clobber those registers here; only clear stack slots and non-arg registers.
         emit_mov64_to_reg(&mut emit, 9, 0);
         for loc in self.regmap.var_map.values().copied() {
             match loc {
@@ -271,7 +253,6 @@ impl<'a> JitCompiler<'a> {
             }
         }
 
-        // Track which variables have been initialized so we can release on overwrite/teardown.
         let mut assigned: HashSet<String> = HashSet::new();
         let mut assigned_order: VecDeque<String> = VecDeque::new();
 
@@ -679,7 +660,6 @@ impl<'a> JitCompiler<'a> {
                     }
                 }
                 IrInstr::AllocStruct { dest, name: _ } => {
-                    // For now, treat struct allocation like map allocation
                     if assigned.contains(dest) {
                         let loc = self
                             .regmap
@@ -1182,8 +1162,6 @@ impl<'a> JitCompiler<'a> {
                     }
                 }
                 IrInstr::Spawn { task } => {
-                    // JIT backend does not yet have async scheduler integration.
-                    // Preserve semantics by treating spawn as a passthrough value.
                     let task_loc = self
                         .regmap
                         .get(task)
@@ -1228,9 +1206,6 @@ impl<'a> JitCompiler<'a> {
                     emit.emit_call(rt_is_truthy);
                     emit.emit_u32_le(encode_add_imm(Reg::X(9), Reg::X(0), 0));
                     emit_restore_call_regs(&mut emit);
-                    // rt_is_truthy returns an EncodedValue int (0/1), i.e. 1 for false and 3 for true.
-                    // We stash the call result into x9 before restoring x0-x7, so compare x9 against
-                    // encode_int(0) == 1.
                     emit.emit_u32_le(encode_cmp_imm(Reg::X(9), 1)); // encode_int(0)
                     let off = emit.len();
                     emit.emit_u32_le(0);
@@ -1445,7 +1420,6 @@ mod tests {
             },
         ]);
 
-        // len([1,2,3,4]) + pop(...) = 4 + 4 = 8
         assert_eq!(decode_int(result), 8);
     }
 

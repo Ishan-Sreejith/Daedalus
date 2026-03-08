@@ -1,10 +1,7 @@
 #!/bin/bash
-# Comprehensive JIT Compiler Test Suite
-# Tests every feature of the CoRe language
 
 cd "/Users/ishan/IdeaProjects/CoRe Main/CoRe Backup V1.0 copy"
 
-# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -15,10 +12,8 @@ PASSED=0
 FAILED=0
 SKIPPED=0
 
-# Test counter
 TEST_NUM=1
 
-# Function to run a test
 run_test() {
     local name="$1"
     local file="$2"
@@ -41,7 +36,6 @@ run_test() {
 
     expected_ok=1
     if [ -n "$expected" ]; then
-        # expected can be multi-line; require each line to appear verbatim in printed output
         while IFS= read -r line; do
             [ -z "$line" ] && continue
             if ! echo "$printed" | grep -Fxq "$line"; then
@@ -85,17 +79,12 @@ echo -e "${BLUE}║     CoRe Language JIT Comprehensive Test Suite             �
 echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
-# Rebuild first
 echo -e "${BLUE}Building JIT compiler...${NC}"
 cargo build --release 2>&1 | grep -E "Finished|error" || true
 echo ""
 
-# ============================================================
-# FEATURE 1: BASIC VARIABLES
-# ============================================================
 echo -e "${YELLOW}=== FEATURE 1: BASIC VARIABLES ===${NC}"
 
-# Create test files
 cat > test_simple.fr << 'EOF'
 var x: 5
 say: x
@@ -119,9 +108,6 @@ run_test "Simple variable assignment" "test_simple.fr" $'5' ""
 run_test "Multiple variables" "/tmp/test_vars.fr" $'5\n10' ""
 run_test "Variable with arithmetic" "/tmp/test_var_arith.fr" $'8' ""
 
-# ============================================================
-# FEATURE 2: ARITHMETIC
-# ============================================================
 echo -e "${YELLOW}=== FEATURE 2: ARITHMETIC ===${NC}"
 
 cat > /tmp/test_add.fr << 'EOF'
@@ -153,9 +139,6 @@ run_test "Subtraction" "/tmp/test_sub.fr" $'7' ""
 run_test "Multiplication" "/tmp/test_mul.fr" $'20' ""
 run_test "Division" "/tmp/test_div.fr" $'5' ""
 
-# ============================================================
-# FEATURE 3: COMPARISONS
-# ============================================================
 echo -e "${YELLOW}=== FEATURE 3: COMPARISONS ===${NC}"
 
 cat > /tmp/test_gt.fr << 'EOF'
@@ -192,9 +175,6 @@ run_test "Greater than" "/tmp/test_gt.fr" $'1' ""
 run_test "Less than" "/tmp/test_lt.fr" $'1' ""
 run_test "Equality" "/tmp/test_eq.fr" $'1' ""
 
-# ============================================================
-# FEATURE 4: CONTROL FLOW (if/else)
-# ============================================================
 echo -e "${YELLOW}=== FEATURE 4: CONTROL FLOW (if/else) ===${NC}"
 
 cat > /tmp/test_if_simple.fr << 'EOF'
@@ -216,9 +196,6 @@ EOF
 run_test "Simple if" "/tmp/test_if_simple.fr" $'yes' ""
 run_test "If/else" "/tmp/test_ifelse.fr" $'small' ""
 
-# ============================================================
-# FEATURE 5: FUNCTIONS
-# ============================================================
 echo -e "${YELLOW}=== FEATURE 5: FUNCTIONS ===${NC}"
 
 cat > /tmp/test_fn_simple.fr << 'EOF'
@@ -251,9 +228,6 @@ run_test "Function with parameter" "/tmp/test_fn_simple.fr" $'6' ""
 run_test "Function with multiple params" "/tmp/test_fn_multi.fr" $'12' ""
 run_test "Function with no args" "/tmp/test_fn_noargs.fr" $'5' ""
 
-# ============================================================
-# FEATURE 6: WHILE LOOPS
-# ============================================================
 echo -e "${YELLOW}=== FEATURE 6: WHILE LOOPS ===${NC}"
 
 cat > /tmp/test_while.fr << 'EOF'
@@ -266,9 +240,6 @@ EOF
 
 run_test "While loop" "/tmp/test_while.fr" $'0\n1\n2' ""
 
-# ============================================================
-# FEATURE 7: FOR LOOPS
-# ============================================================
 echo -e "${YELLOW}=== FEATURE 7: FOR LOOPS ===${NC}"
 
 cat > /tmp/test_for_list.fr << 'EOF'
@@ -280,9 +251,6 @@ EOF
 
 run_test "For loop on list" "/tmp/test_for_list.fr" "" "fail"
 
-# ============================================================
-# FEATURE 8: ARRAYS/LISTS
-# ============================================================
 echo -e "${YELLOW}=== FEATURE 8: ARRAYS/LISTS ===${NC}"
 
 cat > /tmp/test_array.fr << 'EOF'
@@ -299,9 +267,6 @@ EOF
 run_test "Array creation" "/tmp/test_array.fr" $'5' ""
 run_test "Array access" "/tmp/test_array_access.fr" $'1' ""
 
-# ============================================================
-# FEATURE 9: STRINGS
-# ============================================================
 echo -e "${YELLOW}=== FEATURE 9: STRINGS ===${NC}"
 
 cat > /tmp/test_string.fr << 'EOF'
@@ -318,9 +283,6 @@ EOF
 run_test "String variable" "/tmp/test_string.fr" $'hello' ""
 run_test "String concatenation" "/tmp/test_string_concat.fr" $'helloworld' ""
 
-# ============================================================
-# FEATURE 10: MAPS/OBJECTS
-# ============================================================
 echo -e "${YELLOW}=== FEATURE 10: MAPS/OBJECTS ===${NC}"
 
 cat > /tmp/test_map.fr << 'EOF'
@@ -330,9 +292,6 @@ EOF
 
 run_test "Map creation" "/tmp/test_map.fr" $'Alice' ""
 
-# ============================================================
-# FEATURE 11: USER INPUT
-# ============================================================
 echo -e "${YELLOW}=== FEATURE 11: USER INPUT ===${NC}"
 
 cat > /tmp/test_ask.fr << 'EOF'
@@ -342,9 +301,6 @@ EOF
 
 run_test "User input (ask)" "/tmp/test_ask.fr" "" "fail"
 
-# ============================================================
-# FEATURE 12: TRY/CATCH
-# ============================================================
 echo -e "${YELLOW}=== FEATURE 12: TRY/CATCH ===${NC}"
 
 cat > /tmp/test_try.fr << 'EOF'
@@ -358,9 +314,6 @@ EOF
 
 run_test "Try/catch" "/tmp/test_try.fr" "" "fail"
 
-# ============================================================
-# FEATURE 13: ASYNC/AWAIT
-# ============================================================
 echo -e "${YELLOW}=== FEATURE 13: ASYNC/AWAIT ===${NC}"
 
 cat > /tmp/test_async.fr << 'EOF'
@@ -374,9 +327,6 @@ EOF
 
 run_test "Async function" "/tmp/test_async.fr" $'42' ""
 
-# ============================================================
-# SUMMARY
-# ============================================================
 echo ""
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║                    TEST SUMMARY                            ║${NC}"

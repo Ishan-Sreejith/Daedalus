@@ -14,17 +14,13 @@ struct Flags {
 enum Operand {
     Reg(usize),
     Imm(i64),
-    // For memory operands like [sp, #16]
     Mem {
         base: usize,
         offset: i64,
         writeback: bool,
     },
-    // For indexed memory operands like [x21, x22, lsl #3]
     MemIndexed { base: usize, index: usize, lsl: u8 },
-    // For adrp/add label combos
     Label(usize),
-    // External symbol labels (for BL syscall shims) - we'll need to handle this differently
     LabelName(usize), // Changed from String to usize for Copy trait
 }
 
@@ -52,7 +48,6 @@ enum Condition {
 #[derive(Debug, Clone)]
 pub(crate) struct Instruction {
     opcode: OpCode,
-    // Using Vec for flexibility; most instructions use 2-3 operands.
     operands: Vec<Operand>,
 }
 
@@ -66,39 +61,22 @@ impl fmt::Display for Instruction {
     }
 }
 
-/// ARM64 Virtual Machine
 pub struct VM {
-    /// General purpose registers x0-x30 and SP (x31)
     pub registers: [i64; 32],
-    /// Floating point registers d0-d31
     pub fp_registers: [f64; 32],
-    /// Stack pointer (sp)
     pub sp: i64,
-    /// Program counter
     pub pc: i64,
-    /// Memory (2MB: 1MB for stack, 1MB for heap/data)
     pub memory: Vec<u8>,
-    /// Data segment offset in memory
     pub data_segment_offset: usize,
-    /// Labels for jumps (code and data)
     pub labels: HashMap<String, usize>,
-    /// Label names lookup table (for LabelName operands)
     pub label_names: HashMap<usize, String>,
-    /// Program instructions (now in a bytecode format)
     pub program: Vec<Instruction>,
-    /// For debugging: map PC to original source line
     pub debug_info: HashMap<usize, String>,
-    /// Execution state
     pub running: bool,
-    /// Step mode
     pub step_mode: bool,
-    /// Heap allocator pointer
     pub heap_ptr: usize,
-    /// Tracked heap allocations (ptr -> size)
     allocations: HashMap<usize, usize>,
-    /// Freed heap blocks available for reuse (ptr, size)
     free_list: Vec<(usize, usize)>,
-    /// Condition flags
     flags: Flags,
 }
 
@@ -125,7 +103,6 @@ impl VM {
     }
 
     pub fn load_program(&mut self, asm: &str) -> Result<(), String> {
-        // Reset state
         self.reset_state();
 
         let mut text_section_lines = Vec::new();
@@ -147,14 +124,11 @@ impl VM {
             }
         }
 
-        // Process data section first to populate data labels
         self.process_data_section(&data_section_lines)?;
 
-        // Process text section to populate code labels and then parse instructions
         self.process_text_section(&text_section_lines)?;
 
         self.pc = self.labels.get("_main").cloned().unwrap_or(0) as i64;
-        // Treat returning from _main as program termination.
         self.registers[30] = self.program.len() as i64;
         self.running = true;
         Ok(())
@@ -209,7 +183,6 @@ impl VM {
     }
 
     fn process_text_section(&mut self, lines: &[&str]) -> Result<(), String> {
-        // First pass: find all code labels
         let mut line_num = 0;
         for line in lines {
             if line.starts_with('.') && !line.ends_with(':') { continue; }
@@ -221,7 +194,6 @@ impl VM {
             }
         }
 
-        // Second pass: parse instructions
         for line in lines {
             if line.ends_with(':') || (line.starts_with('.') && !line.ends_with(':')) {
                 continue;
@@ -368,11 +340,9 @@ impl VM {
                         self.pc = target as i64 - 1;
                     }
                     Operand::LabelName(name_id) => {
-                        // Fixed borrow checker issue by cloning
                         if let Some(label_name) = self.label_names.get(&name_id).cloned() {
                             self.exec_bl_syscall(&label_name)?;
                         } else {
-                            // Fallback to parsing from debug info
                             let label_name = self
                                 .debug_info
                                 .get(&(self.pc as usize))
@@ -413,8 +383,6 @@ impl VM {
                 if self.get_op(ops[0])? != 0 { self.pc = self.get_op(ops[1])? - 1; }
             }
             ADRP => {
-                // Simplified ADRP: materialize page(base) for a label.
-                // ADD with @PAGEOFF will add the low 12 bits.
                 self.set_reg_op(ops[0], self.get_op(ops[1])? & !0xfff);
             }
             SVC => self.exec_svc()?,
@@ -643,7 +611,6 @@ impl VM {
                     lsl: shift,
                 });
             } else {
-                // [base, index, lsl #3] not supported by this simplified parser, but could be added.
                 return Err("Indexed memory operands not supported in this VM version".to_string());
             }
         }
@@ -730,7 +697,6 @@ impl VM {
         let aligned = (size + 15) & !15;
         if aligned == 0 { return Ok(0); }
 
-        // First-fit from free list.
         if let Some((idx, &(ptr, block_size))) = self
             .free_list
             .iter()
@@ -877,10 +843,8 @@ impl VM {
             } else if arg.starts_with('x') || arg.starts_with('w') || arg.starts_with('d') || arg.starts_with('s') || arg == "sp" {
                 operands.push(Operand::Reg(self.parse_reg(arg)?));
             } else if let Ok(imm) = self.parse_imm(arg) {
-                // For things like `svc #0x80` where the '#' is optional in some assemblers
                 operands.push(Operand::Imm(imm));
             } else {
-                // Symbolic operand (e.g. BL _printf)
                 let name_id = self.intern_label_name(arg);
                 operands.push(Operand::LabelName(name_id));
             }
@@ -888,7 +852,6 @@ impl VM {
 
         let opcode = match mnemonic {
             "add" => {
-                // Handle `add x0, x0, .L0@PAGEOFF` from ADRP lowering.
                 if args.len() >= 3 && args[2].contains("@PAGEOFF") {
                     let dest = self.parse_reg(&args[0])?;
                     let base = self.parse_reg(&args[1])?;

@@ -35,7 +35,6 @@ enum Operand {
 
 #[derive(Clone, Copy, Debug)]
 enum Builtin {
-    // Collection functions
     Len,
     Keys,
     Values,
@@ -46,7 +45,6 @@ enum Builtin {
     Filter,
     Map,
 
-    // Math functions
     Abs,
     Min,
     Max,
@@ -56,7 +54,6 @@ enum Builtin {
     Ceil,
     Round,
 
-    // String functions
     Split,
     Join,
     Substring,
@@ -65,13 +62,11 @@ enum Builtin {
     Trim,
     Contains,
 
-    // Type conversion
     Str,
     Num,
     Bool,
     Type,
 
-    // I/O functions
     Print,
     Println,
 }
@@ -173,7 +168,6 @@ impl<'a, W: Write> Engine<'a, W> {
         while let Some(frame) = frames.last_mut() {
             let func = &self.program.functions[frame.func as usize];
             if frame.pc >= func.code.len() {
-                // Implicit return null
                 let ret_value = Value::Null;
                 self.return_from(&mut frames, ret_value)?;
                 continue;
@@ -357,7 +351,6 @@ impl<'a, W: Write> Engine<'a, W> {
                     frame.pc += 1;
                 }
                 Op::Call { dst, callee, args } => {
-                    // Advance caller pc before the call.
                     let caller_index = frames.len() - 1;
                     frames[caller_index].pc += 1;
 
@@ -418,7 +411,6 @@ impl<'a, W: Write> Engine<'a, W> {
             }
             Ok(())
         } else {
-            // returned from entry
             Ok(())
         }
     }
@@ -517,7 +509,6 @@ fn display_value(v: &Value, depth: usize) -> String {
 
 fn exec_builtin(b: Builtin, args: &[Value]) -> Result<Value, String> {
     match b {
-        // Collection functions
         Builtin::Len => {
             if args.len() != 1 {
                 return Err("len expects 1 arg".to_string());
@@ -601,7 +592,6 @@ fn exec_builtin(b: Builtin, args: &[Value]) -> Result<Value, String> {
             Ok(Value::List(Rc::new(RefCell::new(items))))
         }
 
-        // Math functions
         Builtin::Abs => {
             if args.len() != 1 {
                 return Err("abs expects 1 arg".to_string());
@@ -662,7 +652,6 @@ fn exec_builtin(b: Builtin, args: &[Value]) -> Result<Value, String> {
             Ok(Value::Number(n.round()))
         }
 
-        // String functions
         Builtin::Split => {
             if args.len() != 2 {
                 return Err("split expects 2 args".to_string());
@@ -751,7 +740,6 @@ fn exec_builtin(b: Builtin, args: &[Value]) -> Result<Value, String> {
             Ok(Value::Bool(s.contains(needle.as_str())))
         }
 
-        // Type conversion
         Builtin::Str => {
             if args.len() != 1 {
                 return Err("str expects 1 arg".to_string());
@@ -803,7 +791,6 @@ fn exec_builtin(b: Builtin, args: &[Value]) -> Result<Value, String> {
             Ok(Value::String(Rc::new(t.to_string())))
         }
 
-        // I/O functions
         Builtin::Print => {
             if args.len() != 1 {
                 return Err("print expects 1 arg".to_string());
@@ -819,7 +806,6 @@ fn exec_builtin(b: Builtin, args: &[Value]) -> Result<Value, String> {
             Ok(Value::Null)
         }
 
-        // Add Filter and Map later - they need function support
         Builtin::Filter | Builtin::Map => {
             Err("filter and map functions not yet implemented".to_string())
         }
@@ -845,7 +831,6 @@ fn parse_source(text: &str) -> Result<Vec<FnSrc>, String> {
         .map(|(i, l)| (i + 1, l.to_string()))
         .collect();
 
-    // If we see any "fn name.actions:" / "fn name.params:" we use section mode.
     let section_mode = lines.iter().any(|(_, l)| {
         let t = l.trim_start();
         t.starts_with("fn ")
@@ -1000,8 +985,6 @@ fn parse_brace_mode(lines: &[(usize, String)]) -> Result<Vec<FnSrc>, String> {
             ));
         }
 
-        // fn name: a, b {
-        // fn name {
         let header = line.trim_start_matches("fn").trim();
         let (before_brace, has_brace) = if let Some(pos) = header.find('{') {
             (&header[..pos], true)
@@ -1025,7 +1008,6 @@ fn parse_brace_mode(lines: &[(usize, String)]) -> Result<Vec<FnSrc>, String> {
             return Err(format!("Invalid function name at line {}", ln));
         }
 
-        // Move to body start
         if !has_brace {
             i += 1;
             while i < lines.len() && strip_comment(&lines[i].1).trim().is_empty() {
@@ -1036,7 +1018,6 @@ fn parse_brace_mode(lines: &[(usize, String)]) -> Result<Vec<FnSrc>, String> {
             }
         }
 
-        // Consume possible '{' line if it was separate
         if !has_brace {
             i += 1;
         } else {
@@ -1058,7 +1039,6 @@ fn parse_brace_mode(lines: &[(usize, String)]) -> Result<Vec<FnSrc>, String> {
         if i >= lines.len() {
             return Err(format!("Unclosed function body for '{}' starting at line {}", name, ln));
         }
-        // consume '}'
         i += 1;
 
         out.push(FnSrc {
@@ -1081,7 +1061,6 @@ fn compile(funcs: Vec<FnSrc>) -> Result<Program, String> {
         consts: Vec::new(),
     };
 
-    // Pre-register functions
     for (i, f) in funcs.iter().enumerate() {
         let idx = i as u16;
         if program.func_index.contains_key(&f.name) {
@@ -1090,7 +1069,6 @@ fn compile(funcs: Vec<FnSrc>) -> Result<Program, String> {
         program.func_index.insert(f.name.clone(), idx);
     }
 
-    // Compile each function
     for f in funcs {
         let mut locals = HashMap::new();
         for (i, p) in f.params.iter().enumerate() {
@@ -1104,7 +1082,6 @@ fn compile(funcs: Vec<FnSrc>) -> Result<Program, String> {
             if line.is_empty() {
                 continue;
             }
-            // Support "name:" as label sugar
             if line.ends_with(':') && !line.contains(' ') && !line.contains('\t') {
                 let label = line.trim_end_matches(':').to_string();
                 code.push(Instr {
@@ -1272,7 +1249,6 @@ fn compile(funcs: Vec<FnSrc>) -> Result<Program, String> {
                     };
                     let name = parts[2].clone();
                     let callee = match name.as_str() {
-                        // Collection functions
                         "len" => Callee::Builtin(Builtin::Len),
                         "keys" => Callee::Builtin(Builtin::Keys),
                         "values" => Callee::Builtin(Builtin::Values),
@@ -1283,7 +1259,6 @@ fn compile(funcs: Vec<FnSrc>) -> Result<Program, String> {
                         "filter" => Callee::Builtin(Builtin::Filter),
                         "map" => Callee::Builtin(Builtin::Map),
 
-                        // Math functions
                         "abs" => Callee::Builtin(Builtin::Abs),
                         "min" => Callee::Builtin(Builtin::Min),
                         "max" => Callee::Builtin(Builtin::Max),
@@ -1293,7 +1268,6 @@ fn compile(funcs: Vec<FnSrc>) -> Result<Program, String> {
                         "ceil" => Callee::Builtin(Builtin::Ceil),
                         "round" => Callee::Builtin(Builtin::Round),
 
-                        // String functions
                         "split" => Callee::Builtin(Builtin::Split),
                         "join" => Callee::Builtin(Builtin::Join),
                         "substring" => Callee::Builtin(Builtin::Substring),
@@ -1302,13 +1276,11 @@ fn compile(funcs: Vec<FnSrc>) -> Result<Program, String> {
                         "trim" => Callee::Builtin(Builtin::Trim),
                         "contains" => Callee::Builtin(Builtin::Contains),
 
-                        // Type conversion
                         "str" => Callee::Builtin(Builtin::Str),
                         "num" => Callee::Builtin(Builtin::Num),
                         "bool" => Callee::Builtin(Builtin::Bool),
                         "type" => Callee::Builtin(Builtin::Type),
 
-                        // I/O functions
                         "print" => Callee::Builtin(Builtin::Print),
                         "println" => Callee::Builtin(Builtin::Println),
 
@@ -1484,7 +1456,6 @@ fn operand(locals: &mut HashMap<String, u16>, consts: &mut Vec<Value>, token: &s
         let k = const_index(consts, lit);
         return Ok(Operand::Const(k));
     }
-    // auto-declare as local if referenced (defaults to null)
     let idx = local_index(locals, token)?;
     Ok(Operand::Local(idx))
 }
@@ -1545,7 +1516,6 @@ fn split_tokens(line: &str) -> Result<Vec<String>, String> {
 
         if ch == '"' {
             if !current.is_empty() {
-                // allow quotes only starting a token
                 return Err(format!("Unexpected '\"' in token: {}", line));
             }
             in_str = true;
@@ -1591,7 +1561,6 @@ fn unescape(s: &str) -> String {
 }
 
 pub fn sample_program() -> String {
-    // A tiny example users can copy/paste.
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     format!(
         r#"# CoRe VM IR (section mode)

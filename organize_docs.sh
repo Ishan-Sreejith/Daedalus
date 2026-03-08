@@ -1,18 +1,15 @@
 #!/bin/bash
-# Create a docs folder and organize all markdown/text documentation
 
 cd "/Users/ishan/IdeaProjects/CoRe Main/CoRe Backup V1.0 copy"
 
 echo "📚 Organizing documentation..."
 echo ""
 
-# Create docs directory if it doesn't exist
 if [ ! -d "docs" ]; then
     mkdir -p docs
     echo "✓ Created docs/ directory"
 fi
 
-# Create subdirectories
 mkdir -p docs/JIT
 mkdir -p docs/Language
 mkdir -p docs/Status
@@ -21,7 +18,6 @@ mkdir -p docs/Testing
 echo "✓ Created docs subdirectories"
 echo ""
 
-# List documentation files to organize
 echo "📋 Documentation Files Found:"
 echo ""
 

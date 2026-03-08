@@ -1,4 +1,4 @@
-/* @ts-self-types="./forge.d.ts" */
+
 
 export class CoReEngine {
     __destroy_into_raw() {
@@ -11,10 +11,7 @@ export class CoReEngine {
         const ptr = this.__destroy_into_raw();
         wasm.__wbg_coreengine_free(ptr, 0);
     }
-    /**
-     * @param {string} source
-     * @returns {string}
-     */
+    
     execute(source) {
         let deferred2_0;
         let deferred2_1;
@@ -29,9 +26,7 @@ export class CoReEngine {
             wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
         }
     }
-    /**
-     * @returns {string}
-     */
+    
     get_features() {
         let deferred1_0;
         let deferred1_1;
@@ -44,9 +39,7 @@ export class CoReEngine {
             wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
         }
     }
-    /**
-     * @returns {string}
-     */
+    
     get_version() {
         let deferred1_0;
         let deferred1_1;
@@ -71,10 +64,7 @@ export class CoReEngine {
 }
 if (Symbol.dispose) CoReEngine.prototype[Symbol.dispose] = CoReEngine.prototype.free;
 
-/**
- * @param {string} error
- * @returns {string}
- */
+
 export function format_error(error) {
     let deferred2_0;
     let deferred2_1;
@@ -90,9 +80,7 @@ export function format_error(error) {
     }
 }
 
-/**
- * @returns {string}
- */
+
 export function get_sample_code() {
     let deferred1_0;
     let deferred1_1;

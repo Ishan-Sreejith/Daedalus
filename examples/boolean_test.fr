@@ -1,4 +1,3 @@
-// Boolean logic test
 var t: 10
 var f: 20
 

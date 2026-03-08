@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Test script to diagnose JIT compiler hanging
 
 set -e
 

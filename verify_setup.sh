@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# Quick status verification script
 echo "╔════════════════════════════════════════════════╗"
 echo "║      CoRe Language - Status Verification       ║"
 echo "╚════════════════════════════════════════════════╝"

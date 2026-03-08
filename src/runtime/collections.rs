@@ -1,7 +1,6 @@
 use std::any::Any;
 use std::fmt;
 
-/// Python-style dynamic collection with heap allocation
 #[allow(dead_code)]
 pub struct DynamicList {
     items: Vec<Box<dyn Any>>,
@@ -24,7 +23,6 @@ impl DynamicList {
     pub fn push<T: Any + 'static>(&mut self, item: T) {
         self.items.push(Box::new(item));
 
-        // Slab allocation: grow in chunks
         if self.items.len() >= self.capacity {
             self.capacity *= 2;
             self.items.reserve(self.capacity - self.items.len());

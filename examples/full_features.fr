@@ -1,9 +1,6 @@
-// Super comprehensive feature demo for CoRe Language
-// Tests: classes, functions, advanced logic, nested structures, file I/O, error handling
 
 say: "=== CORE LANGUAGE COMPREHENSIVE TEST ==="
 
-// === Class Declarations with Different Variants ===
 say: "=== Class System Test ==="
 cl Point { x, y }
 clg GlobalNode { id, next, data }
@@ -12,7 +9,6 @@ class FullClass { name, value, metadata }
 
 say: "All class variants parsed successfully"
 
-// === Function Variants and Complex Logic ===
 say: "=== Function System Test ==="
 
 fn calculate_area: width, height {
@@ -72,7 +68,6 @@ var power_result: recursive_power: 2, 8
 say: "2^8 = "
 say: power_result
 
-// === Complex Data Structures ===
 say: "=== Advanced Data Structures ==="
 
 var nested_map: {
@@ -101,7 +96,6 @@ say: matrix
 say: "Matrix[1][2] = "
 say: matrix[1][2]
 
-// === Advanced Logic and Control Flow ===
 say: "=== Complex Logic Tests ==="
 
 var numbers: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
@@ -110,7 +104,6 @@ var odds: []
 
 for num in numbers {
     if num == 2 or num == 4 or num == 6 or num == 8 or num == 10 {
-        // Add to evens list - assuming list push works
         evens: evens + [num]
     } else {
         odds: odds + [num]
@@ -122,7 +115,6 @@ say: evens
 say: "Odd numbers:"
 say: odds
 
-// === String Operations ===
 say: "=== String Processing ==="
 
 var greeting: "Hello"
@@ -135,7 +127,6 @@ for fruit in test_strings {
     say: "Processing fruit: " + fruit
 }
 
-// === Error Handling ===
 say: "=== Error Handling Test ==="
 
 try {
@@ -159,7 +150,6 @@ try {
     say: err
 }
 
-// === Advanced Mathematical Operations ===
 say: "=== Mathematical Operations ==="
 
 var a: 15
@@ -181,7 +171,6 @@ var is_valid: (a > 0) and (b > 0) and (c > 0)
 say: "All values positive:"
 say: is_valid
 
-// === Bitwise Operations ===
 say: "=== Bitwise Operations ==="
 var x: 12  // 1100 in binary
 var y: 10  // 1010 in binary
@@ -198,7 +187,6 @@ say: x ^ y   // Should be 6 (0110)
 say: "~x = "
 say: ~x
 
-// === Complex Conditional Logic ===
 say: "=== Complex Conditionals ==="
 
 var score: 85
@@ -230,7 +218,6 @@ say: final_grade
 say: "Attendance: "
 say: attendance
 
-// === Range Operations ===
 say: "=== Range and Iteration ==="
 
 var sum: 0
@@ -247,7 +234,6 @@ for i in 1..6 {
 say: "5! via loop: "
 say: product
 
-// === Memory and Performance Test ===
 say: "=== Performance Test ==="
 
 var large_list: []
@@ -263,7 +249,6 @@ for square in large_list {
 say: "Sum of squares 1-100: "
 say: list_sum
 
-// === Final Complex Combination ===
 say: "=== Integration Test ==="
 
 var test_data: {

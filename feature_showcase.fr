@@ -1,7 +1,4 @@
-// CoRe Language Feature Showcase
-// Testing all enhanced functionality
 
-// Enhanced Math Functions
 var square_root: sqrt(144)
 say: "Square root of 144: " + str(square_root)
 
@@ -13,7 +10,6 @@ var maximum: max(42, 17)
 say: "Min of 42 and 17: " + str(minimum)
 say: "Max of 42 and 17: " + str(maximum)
 
-// Enhanced String Functions
 var text: "  Hello CoRe Language!  "
 var trimmed: trim(text)
 var uppercase: toupper(trimmed)
@@ -28,7 +24,6 @@ var words: split("apple,banana,cherry", ",")
 var joined: join(words, " | ")
 say: "Split and rejoin: " + joined
 
-// Enhanced Collection Display (JSON-like format)
 var numbers: [1, 4, 9, 16, 25]
 var info: {
     "name": "CoRe",
@@ -39,7 +34,6 @@ var info: {
 say: "Numbers array: " + str(numbers)
 say: "Info map: " + str(info)
 
-// Collection Operations
 var original_length: len(numbers)
 push(numbers, 36)
 var new_length: len(numbers)
@@ -47,13 +41,11 @@ say: "Length before push: " + str(original_length)
 say: "Length after push: " + str(new_length)
 say: "Updated numbers: " + str(numbers)
 
-// Type Checking
 say: "Type of numbers: " + type(numbers)
 say: "Type of info: " + type(info)
 say: "Type of text: " + type(text)
 say: "Type of square_root: " + type(square_root)
 
-// Boolean Conversions
 var is_map: bool(info)
 var is_empty: bool({})
 say: "info is truthy: " + str(is_map)
