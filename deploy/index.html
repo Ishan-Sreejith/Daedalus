@@ -330,27 +330,46 @@ say: greeting"></textarea>
     </footer>
 
     <script type="module">
+        import { CoReJsEngine } from './js/core_js_engine.js';
+
         let coreEngine = null;
+        let engineMode = 'js';
 
-        import('./pkg/forge.js').then(async (module) => {
-            await module.default();
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        const versionInfo = document.getElementById('version-info');
 
-            coreEngine = new module.CoReEngine();
+        function setReadyStatus(label) {
+            statusDot.className = 'indicator-dot ready';
+            statusText.textContent = `CoRe Engine Ready (${label})`;
+        }
 
-            document.getElementById('status-dot').classList.add('ready');
-            document.getElementById('status-text').textContent = 'CoRe Engine Ready';
-            document.getElementById('version-info').textContent = coreEngine.get_version();
+        function initJsEngine() {
+            coreEngine = new CoReJsEngine();
+            engineMode = 'js';
+            setReadyStatus('JS');
+            versionInfo.textContent = coreEngine.get_version();
+            document.getElementById('code-editor').value = coreEngine.get_sample_code();
+        }
 
-            document.getElementById('code-editor').value = module.get_sample_code();
+        async function tryInitWasmEngine() {
+            try {
+                const wasmModule = await import('./pkg/forge.js');
+                await wasmModule.default();
+                const wasmEngine = new wasmModule.CoReEngine();
+                wasmEngine.execute('say: "warmup"');
+                coreEngine = wasmEngine;
+                engineMode = 'wasm';
+                setReadyStatus('WASM');
+                versionInfo.textContent = wasmEngine.get_version();
+                document.getElementById('code-editor').value = wasmModule.get_sample_code();
+            } catch (error) {
+                console.warn('WASM engine unavailable; continuing with JS engine.', error);
+            }
+        }
 
-            console.log('CoRe Language WebAssembly module loaded successfully!');
-            console.log('Features:', JSON.parse(coreEngine.get_features()));
-        }).catch(error => {
-            console.error('Failed to load CoRe WebAssembly module:', error);
-            document.getElementById('status-text').textContent = 'Failed to load engine';
-            document.getElementById('output').textContent =
-                `Error loading CoRe Engine: ${error.message}\n\nPlease refresh the page and try again.`;
-        });
+        initJsEngine();
+        tryInitWasmEngine();
 
         window.runCode = function() {
             if (!coreEngine) {
@@ -364,12 +383,9 @@ say: greeting"></textarea>
                 return;
             }
 
-            const statusDot = document.getElementById('status-dot');
-            const statusText = document.getElementById('status-text');
             const runBtn = document.getElementById('run-btn');
-
             statusDot.className = 'indicator-dot running';
-            statusText.textContent = 'Executing...';
+            statusText.textContent = `Executing (${engineMode.toUpperCase()})...`;
             runBtn.disabled = true;
             runBtn.textContent = 'Running...';
 
@@ -377,12 +393,23 @@ say: greeting"></textarea>
                 const result = coreEngine.execute(code);
                 document.getElementById('output').textContent = result;
             } catch (error) {
-                document.getElementById('output').textContent = `Runtime Error: ${error.message}`;
-                console.error('Execution error:', error);
+                const msg = String(error && error.message ? error.message : error);
+                if (engineMode === 'wasm' && msg.includes('unreachable')) {
+                    initJsEngine();
+                    try {
+                        const retry = coreEngine.execute(code);
+                        document.getElementById('output').textContent =
+                            `${retry}\n\n(Recovered by switching to JS engine)`;
+                    } catch (retryErr) {
+                        document.getElementById('output').textContent =
+                            `Runtime Error: ${retryErr.message || retryErr}`;
+                    }
+                } else {
+                    document.getElementById('output').textContent = `Runtime Error: ${msg}`;
+                }
             }
 
-            statusDot.className = 'indicator-dot ready';
-            statusText.textContent = 'CoRe Engine Ready';
+            setReadyStatus(engineMode.toUpperCase());
             runBtn.disabled = false;
             runBtn.textContent = 'Run Code';
         };

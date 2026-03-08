@@ -1059,7 +1059,7 @@ impl IrBuilder {
                         left: left_temp,
                         right: right_temp,
                     },
-                    _ => unreachable!(),
+                    _ => return Err("Unsupported comparison expression".to_string()),
                 };
                 instrs.push(instr);
                 Ok(dest)
@@ -1080,7 +1080,7 @@ impl IrBuilder {
                         left: left_temp,
                         right: right_temp,
                     },
-                    _ => unreachable!(),
+                    _ => return Err("Unsupported logical expression".to_string()),
                 };
                 instrs.push(instr);
                 Ok(dest)

@@ -383,7 +383,10 @@ impl DirectExecutor {
                         if arg_vals.len() != 1 {
                             return Err("spawn() expects 1 argument".to_string());
                         }
-                        let thunk = arg_vals.into_iter().next().unwrap();
+                        let thunk = arg_vals
+                            .into_iter()
+                            .next()
+                            .ok_or_else(|| "spawn() missing thunk argument".to_string())?;
                         let id = match thunk {
                             Value::Task(id) => id,
                             Value::TaskThunk { func, args } => {
@@ -555,7 +558,10 @@ impl DirectExecutor {
     }
 
     fn finish_frame(&mut self, task: &mut TaskState, value: Option<Value>) -> Result<(), String> {
-        let frame = task.frames.pop().expect("frame exists");
+        let frame = task
+            .frames
+            .pop()
+            .ok_or_else(|| "internal runtime error: task frame stack underflow".to_string())?;
         if let Some(parent) = task.frames.last_mut() {
             task.vars = frame.saved_vars;
             if let Some(dest) = frame.return_dest {
@@ -1326,8 +1332,11 @@ impl DirectExecutor {
                 let parts = keys
                     .into_iter()
                     .map(|k| {
-                        let v = map.get(&k).expect("key exists");
-                        format!("\"{}\": {}", k, self.value_to_string(v))
+                        let rendered = map
+                            .get(&k)
+                            .map(|v| self.value_to_string(v))
+                            .unwrap_or_else(|| "null".to_string());
+                        format!("\"{}\": {}", k, rendered)
                     })
                     .collect::<Vec<_>>();
                 format!("{{{}}}", parts.join(", "))
@@ -1339,8 +1348,11 @@ impl DirectExecutor {
                 let parts = keys
                     .into_iter()
                     .map(|k| {
-                        let v = fields.get(&k).expect("key exists");
-                        format!("{}: {}", k, self.value_to_string(v))
+                        let rendered = fields
+                            .get(&k)
+                            .map(|v| self.value_to_string(v))
+                            .unwrap_or_else(|| "null".to_string());
+                        format!("{}: {}", k, rendered)
                     })
                     .collect::<Vec<_>>();
                 format!("{} {{{}}}", name, parts.join(", "))

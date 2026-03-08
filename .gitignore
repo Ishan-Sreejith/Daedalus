@@ -1,4 +1,3 @@
-/src
 /.proxyai
 /.codex
 /.codex_cache
@@ -30,6 +29,10 @@
 /.codex_proxy_proxy_proxy_token
 /.codex_proxy_proxy_proxy_proxy
 
+target/
+vm/target/
+wasm/target/
+.DS_Store
 
 
 
