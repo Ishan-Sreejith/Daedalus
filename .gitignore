@@ -12,6 +12,7 @@ examples/
 
 *.md
 *.txt
+!README.md
 /docs/
 /examples/
 /deploy/
