@@ -1,34 +1,3 @@
-/.proxyai
-/.codex
-/.codex_cache
-/.codex_history
-/.codex_config
-
-
-
-
-
-
-/.codex_proxy
-/.codex_proxy_cache
-/.codex_proxy_history
-/.codex_proxy_config
-/.codex_proxy_logs
-/.codex_proxy_token
-/.codex_proxy_proxy
-/.codex_proxy_proxy_cache
-/.codex_proxy_proxy_history
-/.codex_proxy_proxy_config
-/.codex_proxy_proxy_logs
-/.codex_proxy_proxy_token
-/.codex_proxy_proxy_proxy
-/.codex_proxy_proxy_proxy_cache
-/.codex_proxy_proxy_proxy_history
-/.codex_proxy_proxy_proxy_config
-/.codex_proxy_proxy_proxy_logs
-/.codex_proxy_proxy_proxy_token
-/.codex_proxy_proxy_proxy_proxy
-
 target/
 vm/target/
 wasm/target/
@@ -41,7 +10,6 @@ docs/
 examples/
 .proxyai/
 
-# Documentation and markdown
 *.md
 *.txt
 /docs/
@@ -49,7 +17,7 @@ examples/
 /deploy/
 *.fr
 *.s
-# Executables generated from .fr samples/tests
+
 /main
 /test*
 /vm_test
