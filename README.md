@@ -1,4 +1,6 @@
-Daedalus OS
+#Daedalus OS (previously flux)
+
+#Daedalus is a rebuilt version of my previous OS and kernel, so I use snippets of code from there
 
 Daedalus OS is a web-based OS simulator with a terminal-first interface and a toggleable desktop view. It runs entirely in the browser and includes a simulated file system plus a command parser that supports loops, interrupts, and custom commands.
 
