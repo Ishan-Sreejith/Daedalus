@@ -1,0 +1,1013 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Daedalus OS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ["Inter", "ui-sans-serif", "system-ui"],
+              mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular"],
+            },
+            colors: {
+              daedalus: {
+                50: "#eef4ff",
+                100: "#d9e6ff",
+                200: "#b8ccff",
+                300: "#8aa9ff",
+                400: "#5b7dff",
+                500: "#2f52ff",
+                600: "#243fe6",
+                700: "#1f34b8",
+                800: "#1d2d8f",
+                900: "#1c276f",
+              },
+            },
+          },
+        },
+      };
+    </script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.2/js/all.min.js"
+      crossorigin="anonymous"
+    ></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/framer-motion/dist/framer-motion.umd.js"></script>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        font-family: "Inter", sans-serif;
+      }
+      .glass {
+        background: rgba(15, 23, 42, 0.4);
+        -webkit-backdrop-filter: blur(24px);
+        backdrop-filter: blur(24px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      .desktop-bg {
+        background: radial-gradient(circle at 10% 20%, rgba(30,30,40,1) 0%, rgba(10,10,15,1) 100%);
+      }
+      .xterm {
+        padding: 12px;
+      }
+      .mac-shadow {
+        box-shadow: 0 50px 100px -20px rgba(0, 0, 0, 0.5), 0 30px 60px -30px rgba(0, 0, 0, 0.3);
+      }
+    </style>
+  </head>
+  <body class="bg-slate-950 text-slate-100">
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const { useEffect, useRef, useState } = React;
+      const framer =
+        window.framerMotion ||
+        window["framer-motion"] ||
+        window.FramerMotion ||
+        null;
+      const motion = framer
+        ? framer.motion
+        : ({ children, ...props }) => <div {...props}>{children}</div>;
+      const AnimatePresence = framer
+        ? framer.AnimatePresence
+        : ({ children }) => <>{children}</>;
+
+      const PROMPT_PREFIX = "daedalus";
+      const COMMANDS = {
+        help: "help",
+        desktop: "desk",
+        repeat: "r -",
+        pwd: "here",
+        ls: "list",
+        cd: "go",
+        cat: "read",
+        touch: "new",
+        mkdir: "make",
+        rm: "del",
+        echo: "say",
+        write: "write",
+        grep: "find",
+        nc: "ping",
+        sl: "train",
+        shw: "scan",
+        rmv: "remove",
+        run: "run",
+        start: "start",
+        stop: "stop",
+        reset: "reset",
+        ports: "ports",
+        peek: "peek",
+        sync: "sync",
+      };
+      const TRAIN_ART = [
+        "      ====        ________                ___________ ",
+        "  _D _|  |_______/        \\__I_I_____===__|_________| ",
+        "   |(_)---  |   H\\________/ |   |        =|___ ___|   ",
+        "   /     |  |   H  |  |     |   |         ||_| |_||   ",
+        "  |      |  |   H  |__--------------------| [___] |   ",
+        "  | ________|___H__/__|_____/[][]~\\_______|       |   ",
+        "  |/ |   |-----------I_____I [][] []  D   |=======|__ ",
+        " __/ =| o |=-~~\\  /~~\\  /~~\\  /~~\\ ____Y___________|__ ",
+        " |/-=|___|=O=====O=====O=====O=====|_____/~\\___/       ",
+      ].join("\r\n");
+
+      const createFileSystem = () => ({
+        type: "dir",
+        children: {
+          home: {
+            type: "dir",
+            children: {
+              daedalus: {
+                type: "dir",
+                children: {
+                  "readme.txt": {
+                    type: "file",
+                  content: "Daedalus OS: simulated shell environment.\nType 'help' to explore commands.\n",
+                  },
+                  "notes.log": {
+                    type: "file",
+                    content: "loop: r - sys info\ninterrupt: ctrl+c\n",
+                  },
+                },
+              },
+            },
+          },
+          sys: { type: "dir", children: { "cpu.info": { type: "file", content: "RP2040 @133MHz\n" } } },
+          apps: { type: "dir", children: {} },
+          ports: { type: "dir", children: { "uart0.dev": { type: "file", content: "mock port\n" } } },
+        },
+      });
+
+      const normalizePath = (path) => {
+        const parts = path.split("/").filter(Boolean);
+        const stack = [];
+        parts.forEach((part) => {
+          if (part === ".") return;
+          if (part === "..") {
+            stack.pop();
+            return;
+          }
+          stack.push(part);
+        });
+        return "/" + stack.join("/");
+      };
+
+      const resolvePath = (cwd, inputPath) => {
+        if (!inputPath || inputPath === ".") return cwd;
+        if (inputPath.startsWith("/")) return normalizePath(inputPath);
+        return normalizePath(`${cwd}/${inputPath}`);
+      };
+
+      const getNode = (fsRoot, path) => {
+        const parts = path.split("/").filter(Boolean);
+        let current = fsRoot;
+        for (const part of parts) {
+          if (!current || current.type !== "dir") return null;
+          current = current.children[part];
+        }
+        return current || null;
+      };
+
+      const ensureParent = (fsRoot, path) => {
+        const parts = path.split("/").filter(Boolean);
+        const name = parts.pop();
+        let current = fsRoot;
+        for (const part of parts) {
+          if (!current.children[part]) return null;
+          current = current.children[part];
+          if (current.type !== "dir") return null;
+        }
+        return { parent: current, name };
+      };
+
+      const listDir = (node) => {
+        if (!node || node.type !== "dir") return [];
+        return Object.keys(node.children).sort();
+      };
+
+      function App() {
+        const termShellRef = useRef(null);
+        const termDesktopRef = useRef(null);
+        const termInstanceRef = useRef(null);
+        const fitAddonRef = useRef(null);
+        const inputBufferRef = useRef("");
+        const loopsRef = useRef([]);
+        const interruptTokenRef = useRef(0);
+        const fsRef = useRef(createFileSystem());
+        const cwdRef = useRef("/home/daedalus");
+        const editorRef = useRef({ active: false, path: "", lines: [], currentLine: "" });
+        const historyRef = useRef([]);
+        const historyIndexRef = useRef(-1);
+        const aliasesRef = useRef({});
+        const envRef = useRef({});
+        const bootTimeRef = useRef(Date.now());
+
+        const [desktopOpen, setDesktopOpen] = useState(true);
+        const [fsTrigger, setFsTrigger] = useState(0);
+        const [clock, setClock] = useState(new Date());
+        const [exitMenuOpen, setExitMenuOpen] = useState(false);
+        const [windowPos, setWindowPos] = useState({ x: 120, y: 120 });
+        const dragStateRef = useRef({ dragging: false, offsetX: 0, offsetY: 0 });
+        const timeFraction = (clock.getHours() + clock.getMinutes() / 60) / 24;
+        const sunStyle = {
+          left: `${10 + timeFraction * 80}%`,
+          bottom: `${8 + Math.sin(Math.PI * timeFraction) * 22}px`,
+        };
+        const clockTime = clock.toLocaleTimeString("en-GB");
+        const clockDate = clock.toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        });
+
+        useEffect(() => {
+          const interval = setInterval(() => setClock(new Date()), 1000);
+          return () => clearInterval(interval);
+        }, []);
+
+        useEffect(() => {
+          if (!window.Terminal) {
+            console.error("xterm.js failed to load.");
+            return;
+          }
+          const term = new window.Terminal({
+            fontFamily: "JetBrains Mono, ui-monospace",
+            fontSize: 13,
+            letterSpacing: 1,
+            cursorBlink: true,
+            theme: {
+              background: "#000000",
+              foreground: "#d1d5db",
+              cursor: "#7ce7d6",
+              selection: "rgba(124, 231, 214, 0.25)",
+            },
+          });
+          const fitAddon = new window.FitAddon.FitAddon();
+          term.loadAddon(fitAddon);
+          term.open(termShellRef.current);
+          fitAddon.fit();
+
+          term.writeln("Daedalus OS booted. Type 'help' for commands.");
+          writePrompt(term);
+
+          const handleResize = () => fitAddon.fit();
+          window.addEventListener("resize", handleResize);
+
+          term.onData((data) => handleTerminalData(data, term));
+
+          termInstanceRef.current = term;
+          fitAddonRef.current = fitAddon;
+
+          return () => {
+            window.removeEventListener("resize", handleResize);
+            term.dispose();
+          };
+        }, []);
+
+        useEffect(() => {
+          const term = termInstanceRef.current;
+          const fitAddon = fitAddonRef.current;
+          if (!term || !fitAddon) return;
+          const target = desktopOpen ? termDesktopRef.current : termShellRef.current;
+          if (target) {
+            requestAnimationFrame(() => {
+              if (termShellRef.current) termShellRef.current.innerHTML = "";
+              if (termDesktopRef.current) termDesktopRef.current.innerHTML = "";
+              term.open(target);
+              fitAddon.fit();
+            });
+          }
+        }, [desktopOpen]);
+
+        useEffect(() => {
+          const handleMouseMove = (event) => {
+            const dragState = dragStateRef.current;
+            if (!dragState.dragging) return;
+            setWindowPos({
+              x: event.clientX - dragState.offsetX,
+              y: event.clientY - dragState.offsetY,
+            });
+          };
+          const handleMouseUp = () => {
+            dragStateRef.current.dragging = false;
+          };
+          window.addEventListener("mousemove", handleMouseMove);
+          window.addEventListener("mouseup", handleMouseUp);
+          return () => {
+            window.removeEventListener("mousemove", handleMouseMove);
+            window.removeEventListener("mouseup", handleMouseUp);
+          };
+        }, []);
+
+        const handleTerminalData = (data, term) => {
+          if (editorRef.current.active) {
+            handleEditorData(data, term);
+            return;
+          }
+          if (data === "\r") {
+            const input = inputBufferRef.current.trim();
+            if (input && input !== historyRef.current[historyRef.current.length - 1]) {
+              historyRef.current.push(input);
+            }
+            historyIndexRef.current = historyRef.current.length;
+            inputBufferRef.current = "";
+            term.write("\r\n");
+            runLine(input, { term });
+            return;
+          }
+
+          if (data === "\u007f") {
+            if (inputBufferRef.current.length > 0) {
+              inputBufferRef.current = inputBufferRef.current.slice(0, -1);
+              term.write("\b \b");
+            }
+            return;
+          }
+
+          if (data === "\x1b[A") {
+            if (historyIndexRef.current > 0) {
+              historyIndexRef.current--;
+              const cmd = historyRef.current[historyIndexRef.current];
+              while (inputBufferRef.current.length > 0) {
+                inputBufferRef.current = inputBufferRef.current.slice(0, -1);
+                term.write("\b \b");
+              }
+              inputBufferRef.current = cmd;
+              term.write(cmd);
+            }
+            return;
+          }
+
+          if (data === "\x1b[B") {
+            if (historyIndexRef.current < historyRef.current.length) {
+              historyIndexRef.current++;
+              const cmd = historyIndexRef.current === historyRef.current.length ? "" : historyRef.current[historyIndexRef.current];
+              while (inputBufferRef.current.length > 0) {
+                inputBufferRef.current = inputBufferRef.current.slice(0, -1);
+                term.write("\b \b");
+              }
+              inputBufferRef.current = cmd;
+              term.write(cmd);
+            }
+            return;
+          }
+
+          if (data === "\x03") {
+            handleInterrupt(term);
+            return;
+          }
+
+          if (data >= String.fromCharCode(0x20) && data <= String.fromCharCode(0x7E)) {
+             inputBufferRef.current += data;
+             term.write(data);
+          }
+        };
+
+        const handleInterrupt = (term) => {
+          interruptTokenRef.current += 1;
+          loopsRef.current.forEach((loop) => loop.cancel());
+          loopsRef.current = [];
+          if (desktopOpen) {
+            setDesktopOpen(false);
+          }
+          term.write("^C\r\n");
+          writePrompt(term);
+        };
+
+        const printLine = (term, message) => {
+          term.writeln(message);
+        };
+
+        const getPrompt = () => {
+          const homeRoot = "/home/daedalus";
+          const suffix = cwdRef.current.startsWith(homeRoot)
+            ? cwdRef.current.slice(homeRoot.length)
+            : cwdRef.current;
+          return `${PROMPT_PREFIX}${suffix || ""}:: `;
+        };
+
+        const writePrompt = (term) => {
+          term.write(getPrompt());
+        };
+
+        const executeCommand = (input, { term, fromLoop = false } = {}) => {
+          const done = (success) => {
+            if (!fromLoop) writePrompt(term);
+            return success;
+          };
+          if (!input) return done(true);
+
+          if (input === COMMANDS.help) {
+            printLine(
+              term,
+              [
+                "help: show command list",
+                "desk: open desktop view",
+                "r - [cmd]: repeat a command until Ctrl+C",
+                "sys cpu|memory|info: system stats",
+                "here: print current path",
+                "list [path]: list directory",
+                "go [path]: change directory",
+                "read <file>: print file",
+                "new <file>: create empty file",
+                "make <dir>: create directory",
+                "del [-r] <path>: delete file or directory",
+                "say <text> [> file|>> file]: print or write",
+                "mod <file>: open editor (Ctrl+X save, Ctrl+C cancel)",
+                "emod <file> <text>: overwrite file",
+                "write <file> <text>: overwrite file",
+                "find <pattern> <file>: search file",
+                "ping <host> <port>: mock connect",
+                "train: show train",
+                "&& and ||: chain commands",
+                "!cmd: negate result",
+                "if <cmd> then <cmd> else <cmd>: conditional",
+                "scan/remove/run/start/stop/reset/ports/peek/sync: mock commands",
+              ].join("\\r\\n")
+            );
+            return done(true);
+          }
+
+          if (input.startsWith(COMMANDS.repeat)) {
+            const loopCommand = input.replace(/^r -\s*/, "").trim();
+            if (!loopCommand) {
+              printLine(term, "Usage: r - [command]");
+              return done(false);
+            }
+            const loop = startRepeatLoop(loopCommand, term);
+            loopsRef.current.push(loop);
+            printLine(term, `Repeating: ${loopCommand}`);
+            return done(true);
+          }
+
+          if (input === COMMANDS.desktop || input === "desktop") {
+            setDesktopOpen(true);
+            printLine(term, "Switching to desktop mode...");
+            return done(true);
+          }
+
+          if (input === COMMANDS.pwd) {
+            printLine(term, cwdRef.current);
+            return done(true);
+          }
+
+          if (input.startsWith(COMMANDS.ls)) {
+            const [, pathArg] = input.split(" ");
+            const targetPath = resolvePath(cwdRef.current, pathArg || ".");
+            const node = getNode(fsRef.current, targetPath);
+            if (!node) {
+              printLine(term, `list: cannot access '${pathArg || "."}': No such file or directory`);
+              return done(false);
+            }
+            if (node.type === "file") {
+              printLine(term, targetPath.split("/").pop());
+            } else {
+              const listing = listDir(node);
+              printLine(term, listing.join("  "));
+            }
+            return done(true);
+          }
+
+          if (input.startsWith(COMMANDS.cd)) {
+            const [, pathArg] = input.split(" ");
+            const targetPath = resolvePath(cwdRef.current, pathArg || "/home/daedalus");
+            const node = getNode(fsRef.current, targetPath);
+            if (!node || node.type !== "dir") {
+              printLine(term, `go: ${pathArg || ""}: No such directory`);
+              return done(false);
+            }
+            cwdRef.current = targetPath;
+            setFsTrigger(p=>p+1);
+            return done(true);
+          }
+
+          if (input.startsWith(`${COMMANDS.cat} `)) {
+            const [, pathArg] = input.split(" ");
+            const targetPath = resolvePath(cwdRef.current, pathArg);
+            const node = getNode(fsRef.current, targetPath);
+            if (!node || node.type !== "file") {
+              printLine(term, `read: ${pathArg}: No such file`);
+              return done(false);
+            }
+            node.content.split("\n").forEach((line) => term.writeln(line));
+            return done(true);
+          }
+
+          if (input.startsWith(`${COMMANDS.touch} `)) {
+            const [, pathArg] = input.split(" ");
+            const targetPath = resolvePath(cwdRef.current, pathArg);
+            const entry = ensureParent(fsRef.current, targetPath);
+            if (!entry) {
+              printLine(term, `new: cannot create '${pathArg}': No such directory`);
+              return done(false);
+            }
+            entry.parent.children[entry.name] = { type: "file", content: "" };
+            return done(true);
+          }
+
+          if (input.startsWith(`${COMMANDS.mkdir} `)) {
+            const [, pathArg] = input.split(" ");
+            const targetPath = resolvePath(cwdRef.current, pathArg);
+            const entry = ensureParent(fsRef.current, targetPath);
+            if (!entry) {
+              printLine(term, `make: cannot create '${pathArg}': No such directory`);
+              return done(false);
+            }
+            entry.parent.children[entry.name] = { type: "dir", children: {} };
+            return done(true);
+          }
+
+          if (input.startsWith(`${COMMANDS.rm} `)) {
+            const args = input.split(" ").slice(1);
+            const recursive = args[0] === "-r" || args[0] === "-rf";
+            const pathArg = recursive ? args[1] : args[0];
+            const targetPath = resolvePath(cwdRef.current, pathArg);
+            const entry = ensureParent(fsRef.current, targetPath);
+            if (!entry || !entry.parent.children[entry.name]) {
+              printLine(term, `del: cannot remove '${pathArg}': No such file or directory`);
+              return done(false);
+            }
+            const node = entry.parent.children[entry.name];
+            if (node.type === "dir" && !recursive && Object.keys(node.children).length > 0) {
+              printLine(term, `del: cannot remove '${pathArg}': Directory not empty`);
+              return done(false);
+            }
+            delete entry.parent.children[entry.name];
+            return done(true);
+          }
+
+          if (input.startsWith(`${COMMANDS.echo} `)) {
+            const rest = input.slice(COMMANDS.echo.length + 1);
+            const redirectMatch = rest.match(/(.*)\\s+(>>?)\\s+(.+)/);
+            if (redirectMatch) {
+              const message = redirectMatch[1];
+              const op = redirectMatch[2];
+              const filePath = resolvePath(cwdRef.current, redirectMatch[3]);
+              const entry = ensureParent(fsRef.current, filePath);
+              if (!entry) {
+                printLine(term, `say: ${redirectMatch[3]}: No such file or directory`);
+                return done(false);
+              }
+              const existing = entry.parent.children[entry.name];
+              if (!existing || existing.type !== "file") {
+                entry.parent.children[entry.name] = { type: "file", content: "" };
+              }
+              if (op === ">") {
+                entry.parent.children[entry.name].content = message + "\n";
+              } else {
+                entry.parent.children[entry.name].content += message + "\n";
+              }
+            } else {
+              printLine(term, rest);
+            }
+            return done(true);
+          }
+
+          if (input.startsWith("emod ")) {
+            const [, pathArg, ...textParts] = input.split(" ");
+            const targetPath = resolvePath(cwdRef.current, pathArg);
+            const entry = ensureParent(fsRef.current, targetPath);
+            if (!entry) {
+              printLine(term, `emod: ${pathArg}: No such directory`);
+              return done(false);
+            }
+            entry.parent.children[entry.name] = { type: "file", content: textParts.join(" ") + "\n" };
+            printLine(term, `emod: wrote ${pathArg}`);
+            return done(true);
+          }
+
+          if (input.startsWith("mod ")) {
+            const [, pathArg] = input.split(" ");
+            const targetPath = resolvePath(cwdRef.current, pathArg);
+            const entry = ensureParent(fsRef.current, targetPath);
+            if (!entry) {
+              printLine(term, `mod: ${pathArg}: No such directory`);
+              return done(false);
+            }
+            if (!entry.parent.children[entry.name] || entry.parent.children[entry.name].type !== "file") {
+              entry.parent.children[entry.name] = { type: "file", content: "" };
+            }
+            const existingContent = entry.parent.children[entry.name].content || "";
+            editorRef.current = {
+              active: true,
+              path: targetPath,
+              lines: existingContent.split("\n").filter((line, idx, arr) => !(idx === arr.length - 1 && line === "")),
+              currentLine: "",
+            };
+            term.writeln("GNU nano 7.0  Daedalus Editor");
+            term.writeln("^X Save  ^C Cancel");
+            editorRef.current.lines.forEach((line) => term.writeln(line));
+            return true;
+          }
+
+          if (input.startsWith(`${COMMANDS.write} `)) {
+            const [, pathArg, ...textParts] = input.split(" ");
+            const targetPath = resolvePath(cwdRef.current, pathArg);
+            const entry = ensureParent(fsRef.current, targetPath);
+            if (!entry) {
+              printLine(term, `write: ${pathArg}: No such directory`);
+              return done(false);
+            }
+            entry.parent.children[entry.name] = { type: "file", content: textParts.join(" ") + "\n" };
+            return done(true);
+          }
+
+          if (input.startsWith(`${COMMANDS.grep} `)) {
+            const [, pattern, pathArg] = input.split(" ");
+            const targetPath = resolvePath(cwdRef.current, pathArg);
+            const node = getNode(fsRef.current, targetPath);
+            if (!node || node.type !== "file") {
+              printLine(term, `find: ${pathArg}: No such file`);
+              return done(false);
+            }
+            node.content
+              .split("\n")
+              .filter((line) => line.includes(pattern))
+              .forEach((line) => term.writeln(line));
+            return done(true);
+          }
+
+          if (input.startsWith(`${COMMANDS.nc} `)) {
+            const [, host, port] = input.split(" ");
+            printLine(term, `ping: probing ${host}:${port} ... open (simulated)`);
+            return done(true);
+          }
+
+          if (input === COMMANDS.sl) {
+            printLine(term, TRAIN_ART);
+            return done(true);
+          }
+
+          if (input.startsWith("sys ")) {
+            const sub = input.split(" ")[1];
+            if (sub === "cpu") {
+              printLine(term, "RP2040 CPU: Dual-core ARM Cortex-M0+, 133MHz");
+            } else if (sub === "memory") {
+              printLine(term, "RP2040 Memory: 264KB SRAM");
+            } else if (sub === "info") {
+              printLine(term, "RP2040 Info: 133MHz CPU, 264KB RAM, 2MB flash (mock)");
+            } else {
+              printLine(term, "sys [cpu|memory|info]");
+            }
+            return done(true);
+          }
+
+          if (input === "history") {
+            if (historyRef.current.length === 0) printLine(term, "history: no commands yet.");
+            else historyRef.current.forEach((c, i) => printLine(term, `${String(i + 1).padStart(3, ' ')} ${c}`));
+            return done(true);
+          }
+          if (input === "clear" || input === "cls") {
+            term.clear();
+            return done(true);
+          }
+          if (input === "uptime") {
+            printLine(term, `up ${Math.floor((Date.now() - bootTimeRef.current) / 1000)} seconds`);
+            return done(true);
+          }
+          if (input === "whoami") {
+            printLine(term, "daedalus");
+            return done(true);
+          }
+          if (input === "env") {
+            if (Object.keys(envRef.current).length === 0) printLine(term, "env: no variables set.");
+            else Object.entries(envRef.current).forEach(([k, v]) => printLine(term, `${k}=${v}`));
+            return done(true);
+          }
+          if (input.startsWith("set ")) {
+            const [, key, ...valParts] = input.split(" ");
+            if (key && valParts.length > 0) {
+              envRef.current[key] = valParts.join(" ");
+              printLine(term, `set: ${key}=${envRef.current[key]}`);
+            } else printLine(term, "set: usage: set <key> <value>");
+            return done(true);
+          }
+          if (input.startsWith("unset ")) {
+            const [, key] = input.split(" ");
+            if (key) { delete envRef.current[key]; printLine(term, "unset done."); }
+            else printLine(term, "unset: usage: unset <key>");
+            return done(true);
+          }
+          if (input === "alias") {
+            if (Object.keys(aliasesRef.current).length === 0) printLine(term, "alias: no aliases set.");
+            else Object.entries(aliasesRef.current).forEach(([k, v]) => printLine(term, `alias ${k}='${v}'`));
+            return done(true);
+          }
+          if (input.startsWith("alias ")) {
+            const [, key, ...valParts] = input.split(" ");
+            if (key && valParts.length > 0) {
+              aliasesRef.current[key] = valParts.join(" ");
+              printLine(term, `alias set: ${key} → ${aliasesRef.current[key]}`);
+            } else printLine(term, "alias: usage: alias <key> <value>");
+            return done(true);
+          }
+          if (input.startsWith("unalias ")) {
+            const [, key] = input.split(" ");
+            if (key) { delete aliasesRef.current[key]; printLine(term, "alias removed."); }
+            else printLine(term, "unalias: usage: unalias <key>");
+            return done(true);
+          }
+          if (input.startsWith("wc ")) {
+            const [, pathArg] = input.split(" ");
+            const targetPath = resolvePath(cwdRef.current, pathArg);
+            const node = getNode(fsRef.current, targetPath);
+            if (!node || node.type !== "file") printLine(term, `wc: ${pathArg}: No such file`);
+            else {
+              const c = node.content;
+              printLine(term, `${String(c.split('\n').length).padStart(4)} ${String(c.split(/\s+/).filter(Boolean).length).padStart(4)} ${String(c.length).padStart(5)} ${pathArg}`);
+            }
+            return done(true);
+          }
+          if (input.startsWith("cp ")) {
+            const [, srcArg, dstArg] = input.split(" ");
+            if (!srcArg || !dstArg) { printLine(term, "cp: usage: cp <src> <dst>"); return done(false); }
+            const srcPath = resolvePath(cwdRef.current, srcArg);
+            const dstPath = resolvePath(cwdRef.current, dstArg);
+            const srcNode = getNode(fsRef.current, srcPath);
+            if (!srcNode) { printLine(term, `cp: cannot stat '${srcArg}': No such file or directory`); return done(false); }
+            const entry = ensureParent(fsRef.current, dstPath);
+            if (!entry) { printLine(term, `cp: cannot create regular file '${dstArg}': No such file or directory`); return done(false); }
+            entry.parent.children[entry.name] = JSON.parse(JSON.stringify(srcNode));
+            setFsTrigger(p=>p+1);
+            return done(true);
+          }
+          if (input.startsWith("mv ")) {
+            const [, srcArg, dstArg] = input.split(" ");
+            if (!srcArg || !dstArg) { printLine(term, "mv: usage: mv <src> <dst>"); return done(false); }
+            const srcPath = resolvePath(cwdRef.current, srcArg);
+            const dstPath = resolvePath(cwdRef.current, dstArg);
+            const srcNode = getNode(fsRef.current, srcPath);
+            const srcEntry = ensureParent(fsRef.current, srcPath);
+            if (!srcNode || !srcEntry) { printLine(term, `mv: cannot stat '${srcArg}': No such file or directory`); return done(false); }
+            const entry = ensureParent(fsRef.current, dstPath);
+            if (!entry) { printLine(term, `mv: cannot move to '${dstArg}': No such file or directory`); return done(false); }
+            entry.parent.children[entry.name] = srcNode;
+            delete srcEntry.parent.children[srcEntry.name];
+            setFsTrigger(p=>p+1);
+            return done(true);
+          }
+
+          const mockCommands = [
+            COMMANDS.shw,
+            COMMANDS.rmv,
+            COMMANDS.run,
+            COMMANDS.start,
+            COMMANDS.stop,
+            COMMANDS.reset,
+            COMMANDS.ports,
+            COMMANDS.peek,
+            COMMANDS.sync,
+          ];
+          if (mockCommands.includes(input)) {
+            printLine(term, `Mock response for ${input}.`);
+            return done(true);
+          }
+
+          printLine(term, `Unknown command: ${input}`);
+          return done(false);
+        };
+
+        const runLine = (line, { term, fromLoop = false } = {}) => {
+          const trimmed = line.trim();
+          if (!trimmed) return true;
+
+          if (trimmed.startsWith("if ")) {
+            const match = trimmed.match(/^if\s+(.+?)\s+then\s+(.+?)(?:\s+else\s+(.+))?$/);
+            if (!match) {
+              printLine(term, "if syntax: if <cmd> then <cmd> else <cmd>");
+              if (!fromLoop) writePrompt(term);
+              return false;
+            }
+            const [, condCmd, thenCmd, elseCmd] = match;
+            const condOk = runLine(condCmd, { term, fromLoop: true });
+            return condOk
+              ? runLine(thenCmd, { term, fromLoop: true })
+              : elseCmd
+                ? runLine(elseCmd, { term, fromLoop: true })
+                : true;
+          }
+
+          const tokens = trimmed.split(/\s*(\&\&|\|\|)\s*/);
+          let result = null;
+          let op = null;
+          for (const token of tokens) {
+            if (token === "&&" || token === "||") {
+              op = token;
+              continue;
+            }
+            let cmd = token.trim();
+            if (!cmd) continue;
+            let negate = false;
+            if (cmd.startsWith("!")) {
+              negate = true;
+              cmd = cmd.slice(1).trim();
+            }
+            const cmdName = cmd.split(" ")[0];
+            if (aliasesRef.current[cmdName]) {
+              cmd = cmd.replace(cmdName, aliasesRef.current[cmdName]);
+            }
+            if (result === null) {
+              result = executeCommand(cmd, { term, fromLoop: true });
+            } else if (op === "&&") {
+              if (result) result = executeCommand(cmd, { term, fromLoop: true });
+            } else if (op === "||") {
+              if (!result) result = executeCommand(cmd, { term, fromLoop: true });
+            }
+            if (negate) result = !result;
+            op = null;
+          }
+          if (!fromLoop) writePrompt(term);
+          return result ?? true;
+        };
+
+        const handleEditorData = (data, term) => {
+          const editor = editorRef.current;
+          if (data === "\r") {
+            editor.lines.push(editor.currentLine);
+            editor.currentLine = "";
+            term.write("\r\n");
+            return;
+          }
+          if (data === "\u007f") {
+            if (editor.currentLine.length > 0) {
+              editor.currentLine = editor.currentLine.slice(0, -1);
+              term.write("\b \b");
+            }
+            return;
+          }
+          if (data === "\x18") {
+            const entry = ensureParent(fsRef.current, editor.path);
+            if (entry) {
+              entry.parent.children[entry.name] = { type: "file", content: editor.lines.join("\n") + "\n" };
+            }
+            editorRef.current = { active: false, path: "", lines: [], currentLine: "" };
+            term.writeln("\r\n[mod] saved.");
+            writePrompt(term);
+            return;
+          }
+          if (data === "\x03") {
+            editorRef.current = { active: false, path: "", lines: [], currentLine: "" };
+            term.writeln("\r\n[mod] cancelled.");
+            writePrompt(term);
+            return;
+          }
+          editor.currentLine += data;
+          term.write(data);
+        };
+
+        const startRepeatLoop = (loopCommand, term) => {
+          let cancelled = false;
+          const tokenAtStart = interruptTokenRef.current;
+
+          const loop = () => {
+            if (cancelled || tokenAtStart !== interruptTokenRef.current) return;
+            runLine(loopCommand, { term, fromLoop: true });
+            setTimeout(loop, 0);
+          };
+
+          setTimeout(loop, 0);
+
+          return {
+            cancel: () => {
+              cancelled = true;
+            },
+          };
+        };
+
+        const handleExitToShell = () => {
+          interruptTokenRef.current += 1;
+          loopsRef.current.forEach((loop) => loop.cancel());
+          loopsRef.current = [];
+          setDesktopOpen(false);
+          setExitMenuOpen(false);
+          const term = termInstanceRef.current;
+          if (term) {
+            term.writeln("Exited desktop mode.");
+            writePrompt(term);
+          }
+        };
+
+        const startDrag = (event) => {
+          dragStateRef.current.dragging = true;
+          dragStateRef.current.offsetX = event.clientX - windowPos.x;
+          dragStateRef.current.offsetY = event.clientY - windowPos.y;
+        };
+
+        return (
+          <div className="relative min-h-screen overflow-hidden">
+            <div
+              className={`absolute inset-0 transition-opacity duration-500 ${desktopOpen ? "opacity-0 pointer-events-none" : "opacity-100"}`}
+            >
+              <div className="absolute inset-0 bg-black"></div>
+              <div className="relative z-10 flex h-screen items-center justify-center p-6">
+                <div className="terminal-shell w-full max-w-6xl rounded-xl">
+                  <div className="edex-header flex items-center justify-between px-4 py-2 text-[10px] uppercase tracking-[0.3em] text-slate-400">
+                    <div className="flex items-center gap-4">
+                      <span className="text-slate-200">Daedalus Shell</span>
+                      <span>Main</span>
+                    </div>
+                    <div className="text-slate-500">Ctrl+C</div>
+                  </div>
+                  <div ref={termShellRef} className="h-[72vh] w-full font-mono"></div>
+                </div>
+              </div>
+            </div>
+
+            <AnimatePresence>
+              {desktopOpen && (
+                <motion.div
+                  className="absolute inset-0 desktop-bg text-slate-200"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.45 }}
+                >
+                  <div className="absolute top-0 w-full h-8 bg-black/40 backdrop-blur-xl border-b border-white/10 flex items-center justify-between px-6 text-xs font-medium z-50 text-slate-300 select-none">
+                    <div className="flex items-center gap-6">
+                      <span className="font-bold text-slate-100 flex items-center gap-2">
+                        <i className="fas fa-layer-group text-blue-400"></i> Daedalus OS
+                      </span>
+                      <span className="cursor-pointer hover:text-white transition-colors">File</span>
+                      <span className="cursor-pointer hover:text-white transition-colors">Edit</span>
+                      <span className="cursor-pointer hover:text-white transition-colors">View</span>
+                      <span className="cursor-pointer hover:text-white transition-colors">System</span>
+                    </div>
+                    <div className="flex items-center gap-6">
+                      <span className="flex items-center gap-2">
+                        <i className="fas fa-microchip"></i> Uptime: {Math.floor((Date.now() - bootTimeRef.current) / 1000)}s
+                      </span>
+                      <span>{clockDate} {clockTime}</span>
+                    </div>
+                  </div>
+
+                  <div className="relative w-full h-full pt-10 pb-24 px-8 flex items-center justify-center">
+                    <div className="w-full max-w-5xl h-[70vh] glass rounded-xl mac-shadow flex flex-col overflow-hidden relative z-10 transition-all hover:shadow-[0_45px_100px_-20px_rgba(0,0,0,0.6)]">
+                      <div className="h-10 border-b border-white/5 flex items-center justify-between px-4 select-none relative bg-gradient-to-b from-white/5 to-transparent">
+                        <div className="flex items-center gap-2 z-20">
+                          <div className="w-3 h-3 rounded-full bg-red-500/90 cursor-pointer hover:bg-red-400 transition-colors shadow-sm" onClick={handleExitToShell}></div>
+                          <div className="w-3 h-3 rounded-full bg-yellow-500/90 cursor-pointer hover:bg-yellow-400 transition-colors shadow-sm"></div>
+                          <div className="w-3 h-3 rounded-full bg-green-500/90 cursor-pointer hover:bg-green-400 transition-colors shadow-sm"></div>
+                        </div>
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <span className="text-xs font-medium text-slate-400 flex items-center gap-2 drop-shadow-md">
+                            <i className="fas fa-terminal opacity-70"></i> daedalus — bash
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex-1 w-full bg-slate-950/40 p-1 rounded-b-xl" ref={termDesktopRef}></div>
+                    </div>
+                  </div>
+
+                  <div className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-2xl glass px-4 py-3 flex items-center justify-center gap-5 mac-shadow z-50">
+                    <div className="flex flex-col items-center gap-1 cursor-pointer group" onClick={handleExitToShell}>
+                       <div className="flex h-12 w-12 items-center justify-center rounded-xl shadow-lg border border-white/10 bg-gradient-to-b from-slate-700 to-slate-900 text-slate-100 transition-transform hover:-translate-y-2 hover:scale-110">
+                         <i className="fas fa-power-off text-xl text-red-400"></i>
+                       </div>
+                       <span className="absolute -top-8 px-2 py-1 bg-slate-800/90 backdrop-blur-md rounded border border-white/10 text-[10px] tracking-wider text-slate-200 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-lg">Exit Destkop</span>
+                    </div>
+                    <div className="w-px h-10 bg-white/10 mx-1"></div>
+                    {listDir(getNode(fsRef.current, cwdRef.current)).map((label) => {
+                      const node = getNode(fsRef.current, `${cwdRef.current}/${label}`);
+                      return (
+                        <div key={label} className="group relative flex flex-col items-center gap-2 cursor-pointer transition-transform hover:-translate-y-2 hover:scale-110" onClick={() => { if(node.type === 'dir') { runLine(`go ${label}`, {term: termInstanceRef.current}); } else { runLine(`read ${label}`, {term: termInstanceRef.current}); } }}>
+                          <div className={`flex h-12 w-12 items-center justify-center rounded-xl shadow-lg border border-white/10 ${node.type === 'dir' ? 'bg-gradient-to-b from-blue-500 to-blue-700 text-white' : 'bg-gradient-to-b from-slate-600 to-slate-800 text-slate-200'}`}>
+                            <i className={`fas text-xl ${node.type === 'dir' ? 'fa-folder drop-shadow-md' : 'fa-file-lines'}`}></i>
+                          </div>
+                          <span className="absolute -top-8 px-2 py-1 bg-slate-800/90 backdrop-blur-md rounded border border-white/10 text-[10px] tracking-wider font-medium text-slate-200 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-lg">{label}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        );
+      }
+
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(<App />);
+    </script>
+
+  </body>
+</html>
