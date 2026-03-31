@@ -78,7 +78,7 @@ void shell_prompt(ShellState *s) {
     suffix = s->cwd;
 
   printf(ANSI_BCYAN ANSI_BOLD "daedalus" ANSI_RESET ANSI_CYAN
-                              "%s" ANSI_RESET ANSI_BWHITE "::" ANSI_RESET " ",
+                              "%s" ANSI_RESET ANSI_BWHITE " $ " ANSI_RESET,
          suffix);
   fflush(stdout);
 }
@@ -258,49 +258,35 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
 
   /* ── help ──────────────────────────────────────────────────── */
   if (strcmp(cmd, "help") == 0) {
-    printf(
-        ANSI_BCYAN ANSI_BOLD
-        "\n  Daedalus OS — Command Reference\n"
-        "  ─────────────────────────────────────────\n" ANSI_RESET ANSI_BWHITE
-        "  Navigation\n" ANSI_RESET "    here             " ANSI_GRAY
-        "print working directory\n" ANSI_RESET "    list [path]      " ANSI_GRAY
-        "list directory contents\n" ANSI_RESET "    go [path]        " ANSI_GRAY
-        "change directory\n" ANSI_RESET ANSI_BWHITE "  Files\n" ANSI_RESET
-        "    read <file>      " ANSI_GRAY "print file contents\n" ANSI_RESET
-        "    new <file>       " ANSI_GRAY "create empty file\n" ANSI_RESET
-        "    make <dir>       " ANSI_GRAY "create directory\n" ANSI_RESET
-        "    del [-r] <path>  " ANSI_GRAY
-        "delete file or directory\n" ANSI_RESET
-        "    write <f> <text> " ANSI_GRAY
-        "overwrite file with text\n" ANSI_RESET
-        "    mod <file>       " ANSI_GRAY
-        "open line editor (.save/.cancel)\n" ANSI_RESET
-        "    emod <f> <text>  " ANSI_GRAY "inline overwrite\n" ANSI_RESET
-        "    find <pat> <f>   " ANSI_GRAY "grep pattern in file\n" ANSI_RESET
-        "    wc <file>        " ANSI_GRAY
-        "word/line/char count\n" ANSI_RESET ANSI_BWHITE "  Output\n" ANSI_RESET
-        "    say <text>       " ANSI_GRAY
-        "print text (> or >> to redirect)\n" ANSI_RESET ANSI_BWHITE
-        "  System\n" ANSI_RESET "    sys cpu|memory|info|version\n"
-        "    whoami           " ANSI_GRAY "print current user\n" ANSI_RESET
-        "    uptime           " ANSI_GRAY
-        "print seconds since boot\n" ANSI_RESET
-        "    ports            " ANSI_GRAY "list /ports devices\n" ANSI_RESET
-        "    ping <h> <port>  " ANSI_GRAY
-        "mock network probe\n" ANSI_RESET ANSI_BWHITE "  Shell\n" ANSI_RESET
-        "    r - <cmd>        " ANSI_GRAY
-        "repeat command (Ctrl+C to stop)\n" ANSI_RESET
-        "    history          " ANSI_GRAY "show command history\n" ANSI_RESET
-        "    alias k v        " ANSI_GRAY "set alias k → v\n" ANSI_RESET
-        "    alias            " ANSI_GRAY "list all aliases\n" ANSI_RESET
-        "    unalias k        " ANSI_GRAY "remove alias\n" ANSI_RESET
-        "    set k v          " ANSI_GRAY "set env variable\n" ANSI_RESET
-        "    env              " ANSI_GRAY "list env variables\n" ANSI_RESET
-        "    unset k          " ANSI_GRAY "remove env variable\n" ANSI_RESET
-        "    cls / clear      " ANSI_GRAY "clear terminal\n" ANSI_RESET
-        "    desk             " ANSI_GRAY "desktop (web UI only)\n" ANSI_RESET
-        "    train            " ANSI_GRAY "sl\n" ANSI_RESET
-        "    exit / quit      " ANSI_GRAY "exit the kernel\n" ANSI_RESET "\n");
+    if (argc == 1) {
+      printf(
+          "\n  Daedalus Runtime v2.1 — Command Manual\n"
+          "  ------------------------------------------\n"
+          "  ls       List directory contents\n"
+          "  cd       Change directory\n"
+          "  pwd      Print working directory\n"
+          "  cat      Read file contents\n"
+          "  touch    Create an empty file\n"
+          "  mkdir    Create directory\n"
+          "  rm       Remove files/folders\n"
+          "  echo     Print or redirect text\n"
+          "  grep     Search text in files\n"
+          "  sys      System status\n"
+          "  desktop  Launch GUI (Web only)\n"
+          "  help <cmd>  Get specific help\n\n");
+    } else {
+      const char *target = argv[1];
+      if (strcmp(target, "ls") == 0)
+        printf("usage: ls [-a] [path]\n\n  Lists the contents of a directory.\n");
+      else if (strcmp(target, "cd") == 0)
+        printf("usage: cd [path]\n\n  Changes the current working directory.\n");
+      else if (strcmp(target, "echo") == 0)
+        printf("usage: echo <text> [> file] [>> file]\n\n  Prints text or writes to a file.\n");
+      else if (strcmp(target, "rm") == 0)
+        printf("usage: rm [--recursive] <path>\n\n  Removes files or directories.\n");
+      else
+        printf("No manual entry for '%s'\n", target);
+    }
     fflush(stdout);
     if (!from_loop)
       shell_prompt(s);
@@ -309,13 +295,13 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
 
   /* ── exit / quit ───────────────────────────────────────────── */
   if (strcmp(cmd, "exit") == 0 || strcmp(cmd, "quit") == 0) {
-    print_info("Daedalus OS halted. Goodbye.");
+    print_info("Daedalus Runtime halted.");
     shell_free(s);
     exit(0);
   }
 
-  /* ── here (pwd) ────────────────────────────────────────────── */
-  if (strcmp(cmd, "here") == 0) {
+  /* ── pwd ────────────────────────────────────────────────── */
+  if (strcmp(cmd, "pwd") == 0) {
     printf(ANSI_BBLUE "%s\n" ANSI_RESET, s->cwd);
     fflush(stdout);
     if (!from_loop)
@@ -323,8 +309,8 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     return;
   }
 
-  /* ── list (ls) ─────────────────────────────────────────────── */
-  if (strcmp(cmd, "list") == 0) {
+  /* ── ls ──────────────────────────────────────────────────── */
+  if (strcmp(cmd, "ls") == 0) {
     const char *path_arg = argc > 1 ? argv[1] : ".";
     char target[MAX_PATH];
     fs_path_resolve(s->cwd, path_arg, target, MAX_PATH);
@@ -332,7 +318,7 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     if (!node) {
       char err[MAX_PATH + 64];
       snprintf(err, sizeof(err),
-               "list: cannot access '%s': No such file or directory", path_arg);
+               "ls: cannot access '%s': No such file or directory", path_arg);
       print_error(err);
     } else if (node->type == NODE_FILE) {
       printf("%s\n", node->name);
@@ -347,15 +333,15 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     return;
   }
 
-  /* ── go (cd) ───────────────────────────────────────────────── */
-  if (strcmp(cmd, "go") == 0) {
+  /* ── cd ──────────────────────────────────────────────────── */
+  if (strcmp(cmd, "cd") == 0) {
     const char *path_arg = argc > 1 ? argv[1] : "/home/daedalus";
     char target[MAX_PATH];
     fs_path_resolve(s->cwd, path_arg, target, MAX_PATH);
     FSNode *node = fs_get_node(s->fs_root, target);
     if (!node || node->type != NODE_DIR) {
       char err[MAX_PATH + 32];
-      snprintf(err, sizeof(err), "go: %s: No such directory", path_arg);
+      snprintf(err, sizeof(err), "cd: %s: No such directory", path_arg);
       print_error(err);
     } else {
       strncpy(s->cwd, target, MAX_PATH - 1);
@@ -365,10 +351,10 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     return;
   }
 
-  /* ── read (cat) ────────────────────────────────────────────── */
-  if (strcmp(cmd, "read") == 0) {
+  /* ── cat ─────────────────────────────────────────────────── */
+  if (strcmp(cmd, "cat") == 0) {
     if (argc < 2) {
-      print_error("read: usage: read <file>");
+      print_error("cat: usage: cat <file>");
       if (!from_loop)
         shell_prompt(s);
       return;
@@ -378,7 +364,7 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     FSNode *node = fs_get_node(s->fs_root, target);
     if (!node || node->type != NODE_FILE) {
       char err[MAX_PATH + 32];
-      snprintf(err, sizeof(err), "read: %s: No such file", argv[1]);
+      snprintf(err, sizeof(err), "cat: %s: No such file", argv[1]);
       print_error(err);
     } else {
       fputs(node->content, stdout);
@@ -391,10 +377,10 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     return;
   }
 
-  /* ── new (touch) ───────────────────────────────────────────── */
-  if (strcmp(cmd, "new") == 0) {
+  /* ── touch ───────────────────────────────────────────────── */
+  if (strcmp(cmd, "touch") == 0) {
     if (argc < 2) {
-      print_error("new: usage: new <file>");
+      print_error("touch: usage: touch <file>");
       if (!from_loop)
         shell_prompt(s);
       return;
@@ -403,7 +389,7 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     fs_path_resolve(s->cwd, argv[1], target, MAX_PATH);
     if (fs_make_file(s->fs_root, target) < 0) {
       char err[MAX_PATH + 48];
-      snprintf(err, sizeof(err), "new: cannot create '%s': No such directory",
+      snprintf(err, sizeof(err), "touch: cannot create '%s': No such directory",
                argv[1]);
       print_error(err);
     }
@@ -412,10 +398,10 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     return;
   }
 
-  /* ── make (mkdir) ──────────────────────────────────────────── */
-  if (strcmp(cmd, "make") == 0) {
+  /* ── mkdir ───────────────────────────────────────────────── */
+  if (strcmp(cmd, "mkdir") == 0) {
     if (argc < 2) {
-      print_error("make: usage: make <dir>");
+      print_error("mkdir: usage: mkdir <dir>");
       if (!from_loop)
         shell_prompt(s);
       return;
@@ -424,7 +410,7 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     fs_path_resolve(s->cwd, argv[1], target, MAX_PATH);
     if (fs_make_dir(s->fs_root, target) < 0) {
       char err[MAX_PATH + 48];
-      snprintf(err, sizeof(err), "make: cannot create '%s': No such directory",
+      snprintf(err, sizeof(err), "mkdir: cannot create '%s': No such directory",
                argv[1]);
       print_error(err);
     }
@@ -479,18 +465,18 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     return;
   }
 
-  /* ── del (rm) ──────────────────────────────────────────────── */
-  if (strcmp(cmd, "del") == 0) {
+  /* ── rm ──────────────────────────────────────────────────── */
+  if (strcmp(cmd, "rm") == 0) {
     int recursive = 0;
     const char *path_arg = NULL;
     for (int i = 1; i < argc; i++) {
-      if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "-rf") == 0)
+      if (strcmp(argv[i], "--recursive") == 0 || strcmp(argv[i], "-r") == 0)
         recursive = 1;
       else
         path_arg = argv[i];
     }
     if (!path_arg) {
-      print_error("del: usage: del [-r] <path>");
+      print_error("rm: usage: rm [--recursive] <path>");
       if (!from_loop)
         shell_prompt(s);
       return;
@@ -501,12 +487,12 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     if (r == -1) {
       char err[MAX_PATH + 48];
       snprintf(err, sizeof(err),
-               "del: cannot remove '%s': No such file or directory", path_arg);
+               "rm: cannot remove '%s': No such file or directory", path_arg);
       print_error(err);
     } else if (r == -2) {
       char err[MAX_PATH + 48];
       snprintf(err, sizeof(err),
-               "del: cannot remove '%s': Directory not empty (use -r)",
+               "rm: cannot remove '%s': Directory not empty (use --recursive)",
                path_arg);
       print_error(err);
     }
@@ -515,8 +501,8 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     return;
   }
 
-  /* ── say (echo) — supports > and >> redirection ────────────── */
-  if (strcmp(cmd, "say") == 0) {
+  /* ── echo ─────────────────────────────────────────────────── */
+  if (strcmp(cmd, "echo") == 0) {
     if (argc < 2) {
       printf("\n");
       fflush(stdout);
@@ -525,12 +511,12 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
       return;
     }
 
-    /* Reconstruct the rest of the line after "say " */
-    const char *rest = strstr(raw_line, "say ");
+    /* Reconstruct the rest of the line after "echo " */
+    const char *rest = strstr(raw_line, "echo ");
     if (!rest)
       rest = "";
     else
-      rest += 4;
+      rest += 5;
 
     /* Check for redirection */
     const char *redir_gg = strstr(rest, " >> ");
@@ -548,7 +534,7 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
       FSNode *parent;
       char leaf[MAX_NAME];
       if (fs_ensure_parent(s->fs_root, target, &parent, leaf) < 0) {
-        print_error("say: No such file or directory");
+        print_error("echo: No such file or directory");
       } else {
         FSNode *node = fs_get_node(s->fs_root, target);
         if (!node) {
@@ -717,10 +703,10 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     return;
   }
 
-  /* ── find (grep) ───────────────────────────────────────────── */
-  if (strcmp(cmd, "find") == 0) {
+  /* ── grep ─────────────────────────────────────────────────── */
+  if (strcmp(cmd, "grep") == 0) {
     if (argc < 3) {
-      print_error("find: usage: find <pattern> <file>");
+      print_error("grep: usage: grep <pattern> <file>");
       if (!from_loop)
         shell_prompt(s);
       return;
@@ -730,7 +716,7 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     FSNode *node = fs_get_node(s->fs_root, target);
     if (!node || node->type != NODE_FILE) {
       char err[MAX_PATH + 32];
-      snprintf(err, sizeof(err), "find: %s: No such file", argv[2]);
+      snprintf(err, sizeof(err), "grep: %s: No such file", argv[2]);
       print_error(err);
     } else {
       char content_copy[MAX_CONTENT];
@@ -748,7 +734,7 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
         lineno++;
       }
       if (!found)
-        print_warn("find: no matches.");
+        print_warn("grep: no matches.");
     }
     fflush(stdout);
     if (!from_loop)
@@ -867,8 +853,8 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     return;
   }
 
-  /* ── train (sl) ────────────────────────────────────────────── */
-  if (strcmp(cmd, "train") == 0) {
+  /* ── sl ──────────────────────────────────────────────────── */
+  if (strcmp(cmd, "sl") == 0) {
     fputs(TRAIN_ART, stdout);
     fflush(stdout);
     if (!from_loop)
@@ -876,8 +862,8 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     return;
   }
 
-  /* ── desk ──────────────────────────────────────────────────── */
-  if (strcmp(cmd, "desk") == 0) {
+  /* ── desktop ───────────────────────────────────────────────── */
+  if (strcmp(cmd, "desktop") == 0) {
     print_warn("Desktop mode is only available in the web UI (index.html).");
     if (!from_loop)
       shell_prompt(s);

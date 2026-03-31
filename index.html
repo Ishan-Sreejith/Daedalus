@@ -3,6 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <meta name="description" content="Daedalus OS - A web-based OS simulator with terminal and desktop interface" />
+    <meta name="theme-color" content="#0f172a" />
     <title>Daedalus OS</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -45,18 +48,23 @@
       src="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.2/js/all.min.js"
       crossorigin="anonymous"
     ></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/framer-motion/dist/framer-motion.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.7.0/lib/xterm-addon-fit.js"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
     <style>
       :root {
         color-scheme: dark;
       }
       body {
         font-family: "Inter", sans-serif;
+        margin: 0;
+        padding: 0;
+      }
+      #root {
+        width: 100%;
+        height: 100vh;
       }
       .glass {
         background: rgba(15, 23, 42, 0.4);
@@ -73,42 +81,106 @@
       .mac-shadow {
         box-shadow: 0 50px 100px -20px rgba(0, 0, 0, 0.5), 0 30px 60px -30px rgba(0, 0, 0, 0.3);
       }
+      .loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        background: #0f172a;
+        color: #e2e8f0;
+        font-family: "JetBrains Mono", monospace;
+        flex-direction: column;
+        gap: 1rem;
+      }
+      .spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid #1e293b;
+        border-top-color: #2f52ff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
     </style>
   </head>
   <body class="bg-slate-950 text-slate-100">
-    <div id="root"></div>
+    <div id="root" class="loading">
+      <div class="spinner"></div>
+      <p>Booting Daedalus...</p>
+    </div>
 
     <script type="text/babel">
+      // Add debugging to window
+      window.DEBUG_DAEDALUS = true;
+
+      // Wait for all dependencies to load
+      function waitForDependencies(callback, timeout = 30000) {
+        const startTime = Date.now();
+        const checkDeps = () => {
+          if (window.DEBUG_DAEDALUS) {
+            console.log('Checking dependencies...', {
+              React: !!window.React,
+              ReactDOM: !!window.ReactDOM,
+              Terminal: !!window.Terminal,
+              FitAddon: !!window.FitAddon,
+            });
+          }
+
+          const allLoaded =
+            window.React &&
+            window.ReactDOM &&
+            window.Terminal &&
+            window.FitAddon;
+
+          if (allLoaded) {
+            if (window.DEBUG_DAEDALUS) console.log('All dependencies loaded!');
+            callback();
+          } else if (Date.now() - startTime > timeout) {
+            const missing = [];
+            if (!window.React) missing.push('React');
+            if (!window.ReactDOM) missing.push('ReactDOM');
+            if (!window.Terminal) missing.push('xterm.js');
+            if (!window.FitAddon) missing.push('xterm-addon-fit');
+            const errorMsg = `Missing dependencies: ${missing.join(', ')}`;
+            if (window.DEBUG_DAEDALUS) console.error(errorMsg);
+            document.getElementById('root').innerHTML = `
+              <div style="display: flex; align-items: center; justify-content: center; height: 100vh; background: #0f172a; color: #ef4444; font-family: monospace; flex-direction: column; gap: 1rem; padding: 2rem; text-align: center;">
+                <h1 style="margin: 0;">⚠️ Failed to Load</h1>
+                <p style="margin: 0;">Missing dependencies: ${missing.join(', ')}</p>
+                <p style="font-size: 12px; color: #94a3b8; margin: 0;">Try refreshing the page or checking your internet connection.</p>
+                <p style="font-size: 11px; color: #64748b; margin-top: 1rem; max-width: 400px;">If the problem persists, your browser's developer console may have more information.</p>
+              </div>
+            `;
+          } else {
+            setTimeout(checkDeps, 100);
+          }
+        };
+        checkDeps();
+      }
+
+      waitForDependencies(() => {
       const { useEffect, useRef, useState } = React;
-      const framer =
-        window.framerMotion ||
-        window["framer-motion"] ||
-        window.FramerMotion ||
-        null;
-      const motion = framer
-        ? framer.motion
-        : ({ children, ...props }) => <div {...props}>{children}</div>;
-      const AnimatePresence = framer
-        ? framer.AnimatePresence
-        : ({ children }) => <>{children}</>;
+      /* Removed framer motion completely */
 
       const PROMPT_PREFIX = "daedalus";
       const COMMANDS = {
         help: "help",
-        desktop: "desk",
-        repeat: "r -",
-        pwd: "here",
-        ls: "list",
-        cd: "go",
-        cat: "read",
-        touch: "new",
-        mkdir: "make",
-        rm: "del",
-        echo: "say",
+        desktop: "desktop",
+        repeat: "repeat",
+        pwd: "pwd",
+        ls: "ls",
+        cd: "cd",
+        cat: "cat",
+        touch: "touch",
+        mkdir: "mkdir",
+        rm: "rm",
+        echo: "echo",
         write: "write",
-        grep: "find",
-        nc: "ping",
-        sl: "train",
+        grep: "grep",
+        nc: "nc",
+        sl: "sl",
         shw: "scan",
         rmv: "remove",
         run: "run",
@@ -222,7 +294,7 @@
         const envRef = useRef({});
         const bootTimeRef = useRef(Date.now());
 
-        const [desktopOpen, setDesktopOpen] = useState(true);
+        const [desktopOpen, setDesktopOpen] = useState(false);
         const [fsTrigger, setFsTrigger] = useState(0);
         const [clock, setClock] = useState(new Date());
         const [exitMenuOpen, setExitMenuOpen] = useState(false);
@@ -267,7 +339,8 @@
           term.open(termShellRef.current);
           fitAddon.fit();
 
-          term.writeln("Daedalus OS booted. Type 'help' for commands.");
+          term.writeln("Daedalus Runtime v2.1 — Handcrafted by Ishan");
+          term.writeln("Type 'help' for the command manual.");
           writePrompt(term);
 
           const handleResize = () => fitAddon.fit();
@@ -417,41 +490,67 @@
           };
           if (!input) return done(true);
 
-          if (input === COMMANDS.help) {
-            printLine(
-              term,
-              [
-                "help: show command list",
-                "desk: open desktop view",
-                "r - [cmd]: repeat a command until Ctrl+C",
-                "sys cpu|memory|info: system stats",
-                "here: print current path",
-                "list [path]: list directory",
-                "go [path]: change directory",
-                "read <file>: print file",
-                "new <file>: create empty file",
-                "make <dir>: create directory",
-                "del [-r] <path>: delete file or directory",
-                "say <text> [> file|>> file]: print or write",
-                "mod <file>: open editor (Ctrl+X save, Ctrl+C cancel)",
-                "emod <file> <text>: overwrite file",
-                "write <file> <text>: overwrite file",
-                "find <pattern> <file>: search file",
-                "ping <host> <port>: mock connect",
-                "train: show train",
-                "&& and ||: chain commands",
-                "!cmd: negate result",
-                "if <cmd> then <cmd> else <cmd>: conditional",
-                "scan/remove/run/start/stop/reset/ports/peek/sync: mock commands",
-              ].join("\\r\\n")
-            );
+          if (input === "help" || input.startsWith("help ")) {
+            const parts = input.split(" ");
+            const target = parts[1];
+
+            if (!target) {
+              printLine(
+                term,
+                [
+                  "Daedalus Runtime Command Manual",
+                  "--------------------------------",
+                  "ls         List directory contents",
+                  "cd         Change current directory",
+                  "pwd        Print working directory",
+                  "cat        Read file contents",
+                  "touch      Create an empty file",
+                  "mkdir      Create a new directory",
+                  "rm         Remove files or directories",
+                  "echo       Print text or redirect to files",
+                  "desktop    Launch the graphical interface",
+                  "exit       Close the current session",
+                  "help <cmd> Get detailed info on a command",
+                  "",
+                  "Run 'help <command>' for specific flags and usage."
+                ].join("\\r\\n")
+              );
+            } else {
+              const manuals = {
+                ls: "ls [options] [path]\\r\\n\\r\\nOptions:\\r\\n  --all    Show hidden files (starting with .)",
+                cd: "cd [path]\\r\\n\\r\\nChanges the current working directory to [path].\\r\\nIf no path is provided, it returns to /home/daedalus.",
+                pwd: "pwd\\r\\n\\r\\nPrints the absolute path of the current working directory.",
+                cat: "cat <file>\\r\\n\\r\\nReads and displays the contents of the specified file.",
+                touch: "touch <file>\\r\\n\\r\\nCreates a new, empty file at the specified path.",
+                mkdir: "mkdir <directory>\\r\\n\\r\\nCreates a new directory at the specified path.",
+                rm: "rm [options] <path>\\r\\n\\r\\nOptions:\\r\\n  --recursive    Remove directories and their contents recursively.",
+                echo: "echo <text> [> file] [>> file]\\r\\n\\r\\nPrints text to the terminal.\\r\\nUse > to overwrite a file or >> to append to it.",
+                desktop: "desktop\\r\\n\\r\\nTransitions the session into the premium graphical mode.",
+                exit: "exit\\r\\n\\r\\nExits the desktop environment or the current session.",
+              };
+              if (manuals[target]) {
+                printLine(term, manuals[target]);
+              } else {
+                printLine(term, `No manual entry for '${target}'`);
+              }
+            }
+            return done(true);
+          }
+
+          if (input === "exit") {
+            if (desktopOpen) {
+              setDesktopOpen(false);
+              printLine(term, "Dropping back to shell.");
+            } else {
+              printLine(term, "Already in the terminal.");
+            }
             return done(true);
           }
 
           if (input.startsWith(COMMANDS.repeat)) {
-            const loopCommand = input.replace(/^r -\s*/, "").trim();
+            const loopCommand = input.replace(/^repeat\s*/, "").trim();
             if (!loopCommand) {
-              printLine(term, "Usage: r - [command]");
+              printLine(term, "Usage: repeat [command]");
               return done(false);
             }
             const loop = startRepeatLoop(loopCommand, term);
@@ -461,8 +560,8 @@
           }
 
           if (input === COMMANDS.desktop || input === "desktop") {
+            printLine(term, "Booting GUI...");
             setDesktopOpen(true);
-            printLine(term, "Switching to desktop mode...");
             return done(true);
           }
 
@@ -471,29 +570,32 @@
             return done(true);
           }
 
-          if (input.startsWith(COMMANDS.ls)) {
-            const [, pathArg] = input.split(" ");
-            const targetPath = resolvePath(cwdRef.current, pathArg || ".");
+          if (input.startsWith("ls")) {
+            const args = input.split(" ").filter(Boolean).slice(1);
+            const isAll = args.includes("--all");
+            const pathArg = args.filter(a => !a.startsWith("--"))[0] || ".";
+            const targetPath = resolvePath(cwdRef.current, pathArg);
             const node = getNode(fsRef.current, targetPath);
             if (!node) {
-              printLine(term, `list: cannot access '${pathArg || "."}': No such file or directory`);
+              printLine(term, `ls: cannot access '${pathArg}': No such file or directory`);
               return done(false);
             }
             if (node.type === "file") {
               printLine(term, targetPath.split("/").pop());
             } else {
-              const listing = listDir(node);
+              let listing = listDir(node);
+              if (!isAll) listing = listing.filter(name => !name.startsWith("."));
               printLine(term, listing.join("  "));
             }
             return done(true);
           }
 
-          if (input.startsWith(COMMANDS.cd)) {
+          if (input.startsWith("cd ")) {
             const [, pathArg] = input.split(" ");
             const targetPath = resolvePath(cwdRef.current, pathArg || "/home/daedalus");
             const node = getNode(fsRef.current, targetPath);
             if (!node || node.type !== "dir") {
-              printLine(term, `go: ${pathArg || ""}: No such directory`);
+              printLine(term, `cd: ${pathArg || ""}: No such directory`);
               return done(false);
             }
             cwdRef.current = targetPath;
@@ -501,63 +603,63 @@
             return done(true);
           }
 
-          if (input.startsWith(`${COMMANDS.cat} `)) {
+          if (input.startsWith("cat ")) {
             const [, pathArg] = input.split(" ");
             const targetPath = resolvePath(cwdRef.current, pathArg);
             const node = getNode(fsRef.current, targetPath);
             if (!node || node.type !== "file") {
-              printLine(term, `read: ${pathArg}: No such file`);
+              printLine(term, `cat: ${pathArg}: No such file`);
               return done(false);
             }
             node.content.split("\n").forEach((line) => term.writeln(line));
             return done(true);
           }
 
-          if (input.startsWith(`${COMMANDS.touch} `)) {
+          if (input.startsWith("touch ")) {
             const [, pathArg] = input.split(" ");
             const targetPath = resolvePath(cwdRef.current, pathArg);
             const entry = ensureParent(fsRef.current, targetPath);
             if (!entry) {
-              printLine(term, `new: cannot create '${pathArg}': No such directory`);
+              printLine(term, `touch: cannot create '${pathArg}': No such directory`);
               return done(false);
             }
             entry.parent.children[entry.name] = { type: "file", content: "" };
             return done(true);
           }
 
-          if (input.startsWith(`${COMMANDS.mkdir} `)) {
+          if (input.startsWith("mkdir ")) {
             const [, pathArg] = input.split(" ");
             const targetPath = resolvePath(cwdRef.current, pathArg);
             const entry = ensureParent(fsRef.current, targetPath);
             if (!entry) {
-              printLine(term, `make: cannot create '${pathArg}': No such directory`);
+              printLine(term, `mkdir: cannot create '${pathArg}': No such directory`);
               return done(false);
             }
             entry.parent.children[entry.name] = { type: "dir", children: {} };
             return done(true);
           }
 
-          if (input.startsWith(`${COMMANDS.rm} `)) {
-            const args = input.split(" ").slice(1);
-            const recursive = args[0] === "-r" || args[0] === "-rf";
-            const pathArg = recursive ? args[1] : args[0];
+          if (input.startsWith("rm ")) {
+            const args = input.split(" ").filter(Boolean).slice(1);
+            const recursive = args.includes("--recursive");
+            const pathArg = args.filter(a => !a.startsWith("--"))[0];
             const targetPath = resolvePath(cwdRef.current, pathArg);
             const entry = ensureParent(fsRef.current, targetPath);
             if (!entry || !entry.parent.children[entry.name]) {
-              printLine(term, `del: cannot remove '${pathArg}': No such file or directory`);
+              printLine(term, `rm: cannot remove '${pathArg}': No such file or directory`);
               return done(false);
             }
             const node = entry.parent.children[entry.name];
             if (node.type === "dir" && !recursive && Object.keys(node.children).length > 0) {
-              printLine(term, `del: cannot remove '${pathArg}': Directory not empty`);
+              printLine(term, `rm: cannot remove '${pathArg}': Directory not empty`);
               return done(false);
             }
             delete entry.parent.children[entry.name];
             return done(true);
           }
 
-          if (input.startsWith(`${COMMANDS.echo} `)) {
-            const rest = input.slice(COMMANDS.echo.length + 1);
+          if (input.startsWith("echo ")) {
+            const rest = input.slice(5);
             const redirectMatch = rest.match(/(.*)\\s+(>>?)\\s+(.+)/);
             if (redirectMatch) {
               const message = redirectMatch[1];
@@ -565,7 +667,7 @@
               const filePath = resolvePath(cwdRef.current, redirectMatch[3]);
               const entry = ensureParent(fsRef.current, filePath);
               if (!entry) {
-                printLine(term, `say: ${redirectMatch[3]}: No such file or directory`);
+                printLine(term, `echo: ${redirectMatch[3]}: No such file or directory`);
                 return done(false);
               }
               const existing = entry.parent.children[entry.name];
@@ -914,99 +1016,96 @@
         };
 
         return (
-          <div className="relative min-h-screen overflow-hidden">
+          <div className="relative min-h-screen overflow-hidden bg-black">
             <div
-              className={`absolute inset-0 transition-opacity duration-500 ${desktopOpen ? "opacity-0 pointer-events-none" : "opacity-100"}`}
+              className={`absolute inset-0 transition-opacity duration-300 ${desktopOpen ? "opacity-0 pointer-events-none" : "opacity-100"}`}
             >
-              <div className="absolute inset-0 bg-black"></div>
-              <div className="relative z-10 flex h-screen items-center justify-center p-6">
-                <div className="terminal-shell w-full max-w-6xl rounded-xl">
-                  <div className="edex-header flex items-center justify-between px-4 py-2 text-[10px] uppercase tracking-[0.3em] text-slate-400">
-                    <div className="flex items-center gap-4">
-                      <span className="text-slate-200">Daedalus Shell</span>
-                      <span>Main</span>
-                    </div>
-                    <div className="text-slate-500">Ctrl+C</div>
-                  </div>
-                  <div ref={termShellRef} className="h-[72vh] w-full font-mono"></div>
-                </div>
-              </div>
+              <div ref={termShellRef} className="h-full w-full font-mono p-4"></div>
             </div>
 
-            <AnimatePresence>
-              {desktopOpen && (
-                <motion.div
-                  className="absolute inset-0 desktop-bg text-slate-200"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.45 }}
-                >
-                  <div className="absolute top-0 w-full h-8 bg-black/40 backdrop-blur-xl border-b border-white/10 flex items-center justify-between px-6 text-xs font-medium z-50 text-slate-300 select-none">
-                    <div className="flex items-center gap-6">
-                      <span className="font-bold text-slate-100 flex items-center gap-2">
-                        <i className="fas fa-layer-group text-blue-400"></i> Daedalus OS
-                      </span>
-                      <span className="cursor-pointer hover:text-white transition-colors">File</span>
-                      <span className="cursor-pointer hover:text-white transition-colors">Edit</span>
-                      <span className="cursor-pointer hover:text-white transition-colors">View</span>
-                      <span className="cursor-pointer hover:text-white transition-colors">System</span>
-                    </div>
-                    <div className="flex items-center gap-6">
-                      <span className="flex items-center gap-2">
-                        <i className="fas fa-microchip"></i> Uptime: {Math.floor((Date.now() - bootTimeRef.current) / 1000)}s
-                      </span>
-                      <span>{clockDate} {clockTime}</span>
-                    </div>
+            {desktopOpen && (
+              <div
+                className="absolute inset-0 desktop-bg text-slate-200"
+              >
+                <div className="absolute top-0 w-full h-8 bg-black/40 backdrop-blur-xl border-b border-white/10 flex items-center justify-between px-6 text-xs font-medium z-50 text-slate-300 select-none">
+                  <div className="flex items-center gap-6">
+                    <span className="font-bold text-slate-100 flex items-center gap-2">
+                      <i className="fas fa-layer-group text-blue-400"></i> Daedalus Runtime
+                    </span>
+                    <span className="cursor-pointer hover:text-white transition-colors">File</span>
+                    <span className="cursor-pointer hover:text-white transition-colors">Edit</span>
+                    <span className="cursor-pointer hover:text-white transition-colors">View</span>
+                    <span className="cursor-pointer hover:text-white transition-colors">System</span>
                   </div>
+                  <div className="flex items-center gap-6">
+                    <span className="text-slate-200">Terminal Shell</span>
+                    <span>v2.1</span>
+                    <span className="flex items-center gap-2">
+                      <i className="fas fa-microchip"></i> Uptime: {Math.floor((Date.now() - bootTimeRef.current) / 1000)}s
+                    </span>
+                    <span>{clockDate} {clockTime}</span>
+                  </div>
+                </div>
 
-                  <div className="relative w-full h-full pt-10 pb-24 px-8 flex items-center justify-center">
-                    <div className="w-full max-w-5xl h-[70vh] glass rounded-xl mac-shadow flex flex-col overflow-hidden relative z-10 transition-all hover:shadow-[0_45px_100px_-20px_rgba(0,0,0,0.6)]">
-                      <div className="h-10 border-b border-white/5 flex items-center justify-between px-4 select-none relative bg-gradient-to-b from-white/5 to-transparent">
-                        <div className="flex items-center gap-2 z-20">
-                          <div className="w-3 h-3 rounded-full bg-red-500/90 cursor-pointer hover:bg-red-400 transition-colors shadow-sm" onClick={handleExitToShell}></div>
-                          <div className="w-3 h-3 rounded-full bg-yellow-500/90 cursor-pointer hover:bg-yellow-400 transition-colors shadow-sm"></div>
-                          <div className="w-3 h-3 rounded-full bg-green-500/90 cursor-pointer hover:bg-green-400 transition-colors shadow-sm"></div>
-                        </div>
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                          <span className="text-xs font-medium text-slate-400 flex items-center gap-2 drop-shadow-md">
-                            <i className="fas fa-terminal opacity-70"></i> daedalus — bash
-                          </span>
-                        </div>
+                <div className="relative w-full h-full pt-10 pb-24 px-8 flex items-center justify-center">
+                  <div className="w-full max-w-5xl h-[70vh] glass rounded-xl mac-shadow flex flex-col overflow-hidden relative z-10 transition-all hover:shadow-[0_45px_100px_-20px_rgba(0,0,0,0.6)]">
+                    <div className="h-10 border-b border-white/5 flex items-center justify-between px-4 select-none relative bg-gradient-to-b from-white/5 to-transparent">
+                      <div className="flex items-center gap-2 z-20">
+                        <div className="w-3 h-3 rounded-full bg-red-500/90 cursor-pointer hover:bg-red-400 transition-colors shadow-sm" onClick={handleExitToShell}></div>
+                        <div className="w-3 h-3 rounded-full bg-yellow-500/90 cursor-pointer hover:bg-yellow-400 transition-colors shadow-sm"></div>
+                        <div className="w-3 h-3 rounded-full bg-green-500/90 cursor-pointer hover:bg-green-400 transition-colors shadow-sm"></div>
                       </div>
-                      <div className="flex-1 w-full bg-slate-950/40 p-1 rounded-b-xl" ref={termDesktopRef}></div>
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <span className="text-xs font-medium text-slate-400 flex items-center gap-2 drop-shadow-md">
+                          <i className="fas fa-terminal opacity-70"></i> daedalus — bash
+                        </span>
+                      </div>
                     </div>
+                    <div className="flex-1 w-full bg-slate-950/40 p-1 rounded-b-xl" ref={termDesktopRef}></div>
                   </div>
+                </div>
 
-                  <div className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-2xl glass px-4 py-3 flex items-center justify-center gap-5 mac-shadow z-50">
-                    <div className="flex flex-col items-center gap-1 cursor-pointer group" onClick={handleExitToShell}>
-                       <div className="flex h-12 w-12 items-center justify-center rounded-xl shadow-lg border border-white/10 bg-gradient-to-b from-slate-700 to-slate-900 text-slate-100 transition-transform hover:-translate-y-2 hover:scale-110">
-                         <i className="fas fa-power-off text-xl text-red-400"></i>
-                       </div>
-                       <span className="absolute -top-8 px-2 py-1 bg-slate-800/90 backdrop-blur-md rounded border border-white/10 text-[10px] tracking-wider text-slate-200 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-lg">Exit Destkop</span>
-                    </div>
-                    <div className="w-px h-10 bg-white/10 mx-1"></div>
-                    {listDir(getNode(fsRef.current, cwdRef.current)).map((label) => {
-                      const node = getNode(fsRef.current, `${cwdRef.current}/${label}`);
-                      return (
-                        <div key={label} className="group relative flex flex-col items-center gap-2 cursor-pointer transition-transform hover:-translate-y-2 hover:scale-110" onClick={() => { if(node.type === 'dir') { runLine(`go ${label}`, {term: termInstanceRef.current}); } else { runLine(`read ${label}`, {term: termInstanceRef.current}); } }}>
-                          <div className={`flex h-12 w-12 items-center justify-center rounded-xl shadow-lg border border-white/10 ${node.type === 'dir' ? 'bg-gradient-to-b from-blue-500 to-blue-700 text-white' : 'bg-gradient-to-b from-slate-600 to-slate-800 text-slate-200'}`}>
-                            <i className={`fas text-xl ${node.type === 'dir' ? 'fa-folder drop-shadow-md' : 'fa-file-lines'}`}></i>
-                          </div>
-                          <span className="absolute -top-8 px-2 py-1 bg-slate-800/90 backdrop-blur-md rounded border border-white/10 text-[10px] tracking-wider font-medium text-slate-200 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-lg">{label}</span>
-                        </div>
-                      );
-                    })}
+                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-2xl glass px-4 py-3 flex items-center justify-center gap-5 mac-shadow z-50">
+                  <div className="flex flex-col items-center gap-1 cursor-pointer group" onClick={handleExitToShell}>
+                     <div className="flex h-12 w-12 items-center justify-center rounded-xl shadow-lg border border-white/10 bg-gradient-to-b from-slate-700 to-slate-900 text-slate-100 transition-transform hover:-translate-y-2 hover:scale-110">
+                       <i className="fas fa-power-off text-xl text-red-400"></i>
+                     </div>
+                     <span className="absolute -top-8 px-2 py-1 bg-slate-800/90 backdrop-blur-md rounded border border-white/10 text-[10px] tracking-wider text-slate-200 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-lg">Exit Destkop</span>
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  <div className="w-px h-10 bg-white/10 mx-1"></div>
+                  {listDir(getNode(fsRef.current, cwdRef.current)).map((label) => {
+                    const node = getNode(fsRef.current, `${cwdRef.current}/${label}`);
+                    return (
+                      <div key={label} className="group relative flex flex-col items-center gap-2 cursor-pointer transition-transform hover:-translate-y-2 hover:scale-110" onClick={() => { if(node.type === 'dir') { runLine(`cd ${label}`, {term: termInstanceRef.current}); } else { runLine(`cat ${label}`, {term: termInstanceRef.current}); } }}>
+                        <div className={`flex h-12 w-12 items-center justify-center rounded-xl shadow-lg border border-white/10 ${node.type === 'dir' ? 'bg-gradient-to-b from-blue-500 to-blue-700 text-white' : 'bg-gradient-to-b from-slate-600 to-slate-800 text-slate-200'}`}>
+                          <i className={`fas text-xl ${node.type === 'dir' ? 'fa-folder drop-shadow-md' : 'fa-file-lines'}`}></i>
+                        </div>
+                        <span className="absolute -top-8 px-2 py-1 bg-slate-800/90 backdrop-blur-md rounded border border-white/10 text-[10px] tracking-wider font-medium text-slate-200 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-lg">{label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         );
       }
 
       const root = ReactDOM.createRoot(document.getElementById("root"));
-      root.render(<App />);
+      try {
+        root.render(<App />);
+        if (window.DEBUG_DAEDALUS) console.log('React app rendered successfully');
+      } catch (error) {
+        console.error('Error rendering React app:', error);
+        document.getElementById('root').innerHTML = `
+          <div style="display: flex; align-items: center; justify-content: center; height: 100vh; background: #0f172a; color: #ef4444; font-family: monospace; flex-direction: column; gap: 1rem; padding: 2rem; text-align: center;">
+            <h1 style="margin: 0;">⚠️ Error Rendering App</h1>
+            <p style="margin: 0; white-space: pre-wrap; font-size: 12px; max-width: 600px;">${error.message}</p>
+            <p style="font-size: 11px; color: #64748b; margin-top: 1rem;">Check your browser's developer console for more details.</p>
+          </div>
+        `;
+      }
+      }); // End of waitForDependencies
     </script>
 
   </body>

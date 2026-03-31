@@ -1,11 +1,5 @@
 #include "daedalus.h"
-
-#include <ctype.h>
-#include <pthread.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
+#include "libc.h"
 
 extern void fs_path_normalize(const char *src, char *out, size_t outsz);
 extern void fs_path_resolve(const char *cwd, const char *input, char *out,
@@ -13,7 +7,6 @@ extern void fs_path_resolve(const char *cwd, const char *input, char *out,
 
 static void print_colored(const char *color, const char *msg) {
   printf("%s%s%s\n", color, msg, ANSI_RESET);
-  fflush(stdout);
 }
 static void print_error(const char *msg) { print_colored(ANSI_BRED, msg); }
 static void print_info(const char *msg) { print_colored(ANSI_BGREEN, msg); }
@@ -30,32 +23,15 @@ static const char *TRAIN_ART = ANSI_YELLOW
     " __/ =| o |=-~~\\  /~~\\  /~~\\  /~~\\ ____Y___________|__\n"
     " |/-=|___|=O=====O=====O=====O=====|_____/~\\___/\n" ANSI_RESET;
 
-typedef struct {
-  ShellState *state;
-  char cmd[MAX_LINE];
-} LoopArg;
-
-static void *repeat_thread(void *arg) {
-  LoopArg *la = (LoopArg *)arg;
-  ShellState *s = la->state;
-  while (s->loop_active) {
-    shell_execute(s, la->cmd, 1);
-    struct timespec ts = {.tv_sec = 0, .tv_nsec = 20 * 1000 * 1000};
-    nanosleep(&ts, NULL);
-  }
-  free(la);
-  return NULL;
-}
-
 /* ─── ShellState lifecycle ───────────────────────────────────────────────── */
 ShellState *shell_init(FSNode *fs) {
   ShellState *s = calloc(1, sizeof(ShellState));
   if (!s) {
-    perror("calloc");
-    exit(1);
+    printf("Error: shell_init calloc failed\n");
+    while(1);
   }
   s->fs_root = fs;
-  s->boot_time = (long)time(NULL);
+  s->boot_time = 0; // Simplified
   strncpy(s->cwd, "/home/daedalus", MAX_PATH - 1);
   return s;
 }
@@ -78,9 +54,8 @@ void shell_prompt(ShellState *s) {
     suffix = s->cwd;
 
   printf(ANSI_BCYAN ANSI_BOLD "daedalus" ANSI_RESET ANSI_CYAN
-                              "%s" ANSI_RESET ANSI_BWHITE "::" ANSI_RESET " ",
+                              "%s" ANSI_RESET ANSI_BWHITE " $ " ANSI_RESET,
          suffix);
-  fflush(stdout);
 }
 
 /* ─── History ───────────────────────────────────────────────────────────────
@@ -190,7 +165,6 @@ void shell_interrupt(ShellState *s) {
   } else {
     printf("\n");
   }
-  fflush(stdout);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -216,7 +190,7 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     return;
   }
 
-  /* Push to history (not for loop-internal executions) */
+  /* Push to history (not for loop-al executions) */
   if (!from_loop)
     history_push(s, line);
 
@@ -253,7 +227,7 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
   const char *cmd = argv[0];
 
   /* ══════════════════════════════════════════════════
-   * BUILT-IN COMMANDS
+   * COMMANDS
    * ══════════════════════════════════════════════════ */
 
   /* ── help ──────────────────────────────────────────────────── */
@@ -298,10 +272,8 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
         "    env              " ANSI_GRAY "list env variables\n" ANSI_RESET
         "    unset k          " ANSI_GRAY "remove env variable\n" ANSI_RESET
         "    cls / clear      " ANSI_GRAY "clear terminal\n" ANSI_RESET
-        "    desk             " ANSI_GRAY "desktop (web UI only)\n" ANSI_RESET
         "    train            " ANSI_GRAY "sl\n" ANSI_RESET
         "    exit / quit      " ANSI_GRAY "exit the kernel\n" ANSI_RESET "\n");
-    fflush(stdout);
     if (!from_loop)
       shell_prompt(s);
     return;
@@ -310,14 +282,12 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
   /* ── exit / quit ───────────────────────────────────────────── */
   if (strcmp(cmd, "exit") == 0 || strcmp(cmd, "quit") == 0) {
     print_info("Daedalus OS halted. Goodbye.");
-    shell_free(s);
-    exit(0);
+    while(1) { __asm__("hlt"); }
   }
 
   /* ── here (pwd) ────────────────────────────────────────────── */
   if (strcmp(cmd, "here") == 0) {
     printf(ANSI_BBLUE "%s\n" ANSI_RESET, s->cwd);
-    fflush(stdout);
     if (!from_loop)
       shell_prompt(s);
     return;
@@ -341,7 +311,6 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
       fs_list_dir(node, listing, sizeof(listing));
       printf("%s\n", listing);
     }
-    fflush(stdout);
     if (!from_loop)
       shell_prompt(s);
     return;
@@ -381,11 +350,10 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
       snprintf(err, sizeof(err), "read: %s: No such file", argv[1]);
       print_error(err);
     } else {
-      fputs(node->content, stdout);
+      printf("%s", node->content);
       if (node->content[0] && node->content[strlen(node->content) - 1] != '\n')
-        putchar('\n');
+        printf("\n");
     }
-    fflush(stdout);
     if (!from_loop)
       shell_prompt(s);
     return;
@@ -433,61 +401,13 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     return;
   }
 
-  /* ── cp ────────────────────────────────────────────────────── */
-  if (strcmp(cmd, "cp") == 0) {
-    if (argc < 3) {
-      print_error("cp: usage: cp <src> <dst>");
-      if (!from_loop)
-        shell_prompt(s);
-      return;
-    }
-    char src[MAX_PATH];
-    char dst[MAX_PATH];
-    fs_path_resolve(s->cwd, argv[1], src, MAX_PATH);
-    fs_path_resolve(s->cwd, argv[2], dst, MAX_PATH);
-    int r = fs_copy(s->fs_root, src, dst);
-    if (r == -1)
-      print_error("cp: cannot stat file or directory");
-    else if (r == -2)
-      print_error("cp: destination exists");
-    else if (r == -3)
-      print_error("cp: memory allocation failed");
-    if (!from_loop)
-      shell_prompt(s);
-    return;
-  }
-
-  /* ── mv ────────────────────────────────────────────────────── */
-  if (strcmp(cmd, "mv") == 0) {
-    if (argc < 3) {
-      print_error("mv: usage: mv <src> <dst>");
-      if (!from_loop)
-        shell_prompt(s);
-      return;
-    }
-    char src[MAX_PATH];
-    char dst[MAX_PATH];
-    fs_path_resolve(s->cwd, argv[1], src, MAX_PATH);
-    fs_path_resolve(s->cwd, argv[2], dst, MAX_PATH);
-    int r = fs_move(s->fs_root, src, dst);
-    if (r == -1)
-      print_error("mv: cannot stat file or directory");
-    else if (r == -2)
-      print_error("mv: destination exists");
-    if (!from_loop)
-      shell_prompt(s);
-    return;
-  }
-
   /* ── del (rm) ──────────────────────────────────────────────── */
   if (strcmp(cmd, "del") == 0) {
     int recursive = 0;
     const char *path_arg = NULL;
     for (int i = 1; i < argc; i++) {
-      if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "-rf") == 0)
-        recursive = 1;
-      else
-        path_arg = argv[i];
+        if (strcmp(argv[i], "-r") == 0) recursive = 1;
+        else path_arg = argv[i];
     }
     if (!path_arg) {
       print_error("del: usage: del [-r] <path>");
@@ -504,11 +424,7 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
                "del: cannot remove '%s': No such file or directory", path_arg);
       print_error(err);
     } else if (r == -2) {
-      char err[MAX_PATH + 48];
-      snprintf(err, sizeof(err),
-               "del: cannot remove '%s': Directory not empty (use -r)",
-               path_arg);
-      print_error(err);
+      print_error("del: Directory not empty (use -r)");
     }
     if (!from_loop)
       shell_prompt(s);
@@ -519,68 +435,40 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
   if (strcmp(cmd, "say") == 0) {
     if (argc < 2) {
       printf("\n");
-      fflush(stdout);
       if (!from_loop)
         shell_prompt(s);
       return;
     }
 
-    /* Reconstruct the rest of the line after "say " */
-    const char *rest = strstr(raw_line, "say ");
-    if (!rest)
-      rest = "";
-    else
-      rest += 4;
+    /* Reconstruct text from argv[1..] */
+    char msg[MAX_CONTENT] = "";
+    int redir_idx = -1;
+    int append = 0;
 
-    /* Check for redirection */
-    const char *redir_gg = strstr(rest, " >> ");
-    const char *redir_g = strstr(rest, " > ");
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], ">") == 0) { redir_idx = i + 1; break; }
+        if (strcmp(argv[i], ">>") == 0) { redir_idx = i + 1; append = 1; break; }
+        if (i > 1) strncat(msg, " ", MAX_CONTENT - strlen(msg) - 1);
+        strncat(msg, argv[i], MAX_CONTENT - strlen(msg) - 1);
+    }
 
-    if (redir_gg) {
-      char msg[MAX_CONTENT];
-      char file_arg[MAX_NAME];
-      size_t mlen = (size_t)(redir_gg - rest);
-      strncpy(msg, rest, mlen);
-      msg[mlen] = '\0';
-      strncpy(file_arg, redir_gg + 4, MAX_NAME - 1);
+    if (redir_idx != -1 && redir_idx < argc) {
       char target[MAX_PATH];
-      fs_path_resolve(s->cwd, file_arg, target, MAX_PATH);
-      FSNode *parent;
-      char leaf[MAX_NAME];
-      if (fs_ensure_parent(s->fs_root, target, &parent, leaf) < 0) {
-        print_error("say: No such file or directory");
-      } else {
-        FSNode *node = fs_get_node(s->fs_root, target);
-        if (!node) {
-          fs_make_file(s->fs_root, target);
-          node = fs_get_node(s->fs_root, target);
-        }
-        if (node)
-          strncat(node->content, msg, MAX_CONTENT - strlen(node->content) - 1);
+      fs_path_resolve(s->cwd, argv[redir_idx], target, MAX_PATH);
+      FSNode *node = fs_get_node(s->fs_root, target);
+      if (!node) {
+        fs_make_file(s->fs_root, target);
+        node = fs_get_node(s->fs_root, target);
       }
-    } else if (redir_g) {
-      char msg[MAX_CONTENT];
-      char file_arg[MAX_NAME];
-      size_t mlen = (size_t)(redir_g - rest);
-      strncpy(msg, rest, mlen);
-      msg[mlen] = '\0';
-      strncpy(file_arg, redir_g + 3, MAX_NAME - 1);
-      char target[MAX_PATH];
-      fs_path_resolve(s->cwd, file_arg, target, MAX_PATH);
-      if (fs_ensure_parent(s->fs_root, target, NULL, NULL) == 0 || 1) {
-        FSNode *node = fs_get_node(s->fs_root, target);
-        if (!node) {
-          fs_make_file(s->fs_root, target);
-          node = fs_get_node(s->fs_root, target);
-        }
-        if (node && node->type == NODE_FILE) {
-          strncpy(node->content, msg, MAX_CONTENT - 1);
-          strncat(node->content, "\n", MAX_CONTENT - strlen(node->content) - 1);
-        }
+      if (node && node->type == NODE_FILE) {
+        if (!append) node->content[0] = '\0';
+        strncat(node->content, msg, MAX_CONTENT - strlen(node->content) - 1);
+        strncat(node->content, "\n", MAX_CONTENT - strlen(node->content) - 1);
+      } else {
+        print_error("say: invalid redirect target");
       }
     } else {
-      printf("%s\n", rest);
-      fflush(stdout);
+      printf("%s\n", msg);
     }
     if (!from_loop)
       shell_prompt(s);
@@ -608,11 +496,9 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
         shell_prompt(s);
       return;
     }
-    /* reconstruct text from argv[2..] */
     char text[MAX_CONTENT] = "";
     for (int i = 2; i < argc; i++) {
-      if (i > 2)
-        strncat(text, " ", MAX_CONTENT - strlen(text) - 1);
+      if (i > 2) strncat(text, " ", MAX_CONTENT - strlen(text) - 1);
       strncat(text, argv[i], MAX_CONTENT - strlen(text) - 1);
     }
     strncat(text, "\n", MAX_CONTENT - strlen(text) - 1);
@@ -639,21 +525,18 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     }
     char text[MAX_CONTENT] = "";
     for (int i = 2; i < argc; i++) {
-      if (i > 2)
-        strncat(text, " ", MAX_CONTENT - strlen(text) - 1);
-      strncat(text, argv[i], MAX_CONTENT - strlen(text) - 1);
+        if (i > 2) strncat(text, " ", MAX_CONTENT - strlen(text) - 1);
+        strncat(text, argv[i], MAX_CONTENT - strlen(text) - 1);
     }
     strncat(text, "\n", MAX_CONTENT - strlen(text) - 1);
     strncpy(node->content, text, MAX_CONTENT - 1);
-    char msg[MAX_NAME + 32];
-    snprintf(msg, sizeof(msg), "emod: wrote %s", argv[1]);
-    print_info(msg);
+    printf("emod: wrote %s\n", argv[1]);
     if (!from_loop)
       shell_prompt(s);
     return;
   }
 
-  /* ── mod (nano-like editor) ────────────────────────────────── */
+  /* ── mod ─────────────────────────────────────────────────── */
   if (strcmp(cmd, "mod") == 0) {
     if (argc < 2) {
       print_error("mod: usage: mod <file>");
@@ -663,13 +546,6 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     }
     char target[MAX_PATH];
     fs_path_resolve(s->cwd, argv[1], target, MAX_PATH);
-    if (fs_ensure_parent(s->fs_root, target, NULL, NULL) < 0 &&
-        fs_get_node(s->fs_root, target) == NULL) {
-      print_error("mod: No such directory");
-      if (!from_loop)
-        shell_prompt(s);
-      return;
-    }
     FSNode *node = fs_get_node(s->fs_root, target);
     if (!node) {
       fs_make_file(s->fs_root, target);
@@ -682,31 +558,20 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
       return;
     }
 
-    printf(ANSI_BYELLOW
-           "─── Daedalus Editor ── %s ─────────────────\n" ANSI_RESET,
-           argv[1]);
-    printf(ANSI_GRAY "  ^S  type .save to save\n"
-                     "  ^C  type .cancel to discard\n" ANSI_RESET);
-    /* Show existing content */
-    if (node->content[0]) {
-      printf(ANSI_DIM "--- existing content ---\n" ANSI_RESET);
-      fputs(node->content, stdout);
-      printf(ANSI_DIM "--- end ---\n" ANSI_RESET);
-    }
-    printf(ANSI_BWHITE "Enter new content:\n" ANSI_RESET);
+    printf(ANSI_BYELLOW "── Daedalus Editor ── %s ──\n" ANSI_RESET, argv[1]);
+    printf("  type '.save' to save, '.cancel' to discard\n");
 
     char new_content[MAX_CONTENT] = "";
     char edit_line[MAX_LINE];
     while (fgets(edit_line, MAX_LINE, stdin)) {
-      /* strip newline */
       edit_line[strcspn(edit_line, "\n")] = '\0';
       if (strcmp(edit_line, ".save") == 0) {
         strncpy(node->content, new_content, MAX_CONTENT - 1);
-        print_info("[mod] saved.");
+        print_info("Saved.");
         break;
       }
       if (strcmp(edit_line, ".cancel") == 0) {
-        print_warn("[mod] cancelled.");
+        print_warn("Cancelled.");
         break;
       }
       strncat(new_content, edit_line, MAX_CONTENT - strlen(new_content) - 2);
@@ -717,7 +582,7 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     return;
   }
 
-  /* ── find (grep) ───────────────────────────────────────────── */
+  /* ── find ─────────────────────────────────────────────────── */
   if (strcmp(cmd, "find") == 0) {
     if (argc < 3) {
       print_error("find: usage: find <pattern> <file>");
@@ -729,28 +594,22 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     fs_path_resolve(s->cwd, argv[2], target, MAX_PATH);
     FSNode *node = fs_get_node(s->fs_root, target);
     if (!node || node->type != NODE_FILE) {
-      char err[MAX_PATH + 32];
-      snprintf(err, sizeof(err), "find: %s: No such file", argv[2]);
-      print_error(err);
+      print_error("find: file not found");
     } else {
       char content_copy[MAX_CONTENT];
       strncpy(content_copy, node->content, MAX_CONTENT - 1);
       char *saveptr;
       char *tok2 = strtok_r(content_copy, "\n", &saveptr);
       int found = 0;
-      int lineno = 1;
       while (tok2) {
         if (strstr(tok2, argv[1])) {
-          printf(ANSI_GRAY "%3d:" ANSI_RESET " %s\n", lineno, tok2);
+          printf("%s\n", tok2);
           found = 1;
         }
         tok2 = strtok_r(NULL, "\n", &saveptr);
-        lineno++;
       }
-      if (!found)
-        print_warn("find: no matches.");
+      if (!found) print_warn("No matches.");
     }
-    fflush(stdout);
     if (!from_loop)
       shell_prompt(s);
     return;
@@ -768,55 +627,30 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
     fs_path_resolve(s->cwd, argv[1], target, MAX_PATH);
     FSNode *node = fs_get_node(s->fs_root, target);
     if (!node || node->type != NODE_FILE) {
-      char err[MAX_PATH + 32];
-      snprintf(err, sizeof(err), "wc: %s: No such file", argv[1]);
-      print_error(err);
+      print_error("wc: file not found");
     } else {
       int lines = 0, words = 0, chars = (int)strlen(node->content);
       int in_word = 0;
       for (int i = 0; node->content[i]; i++) {
         char c = node->content[i];
-        if (c == '\n')
-          lines++;
-        if (isspace((unsigned char)c))
-          in_word = 0;
-        else {
-          if (!in_word) {
-            words++;
-            in_word = 1;
-          }
-        }
+        if (c == '\n') lines++;
+        if (isspace((unsigned char)c)) in_word = 0;
+        else if (!in_word) { words++; in_word = 1; }
       }
-      printf(ANSI_BWHITE "%4d %4d %5d " ANSI_RESET "%s\n", lines, words, chars,
-             argv[1]);
+      printf("%d %d %d %s\n", lines, words, chars, argv[1]);
     }
-    fflush(stdout);
     if (!from_loop)
-      shell_prompt(s);
+        shell_prompt(s);
     return;
   }
 
   /* ── sys ───────────────────────────────────────────────────── */
   if (strcmp(cmd, "sys") == 0) {
-    if (argc < 2) {
-      print_warn("sys: usage: sys cpu|memory|info|version");
-      if (!from_loop)
-        shell_prompt(s);
-      return;
-    }
-    if (strcmp(argv[1], "cpu") == 0)
-      print_info("CPU: RP2040 — Dual-core ARM Cortex-M0+ @ 133 MHz");
-    else if (strcmp(argv[1], "memory") == 0)
-      print_info("MEM: 264 KB SRAM  |  2 MB Flash");
-    else if (strcmp(argv[1], "info") == 0)
-      print_info("RP2040  133 MHz  264 KB RAM  2 MB flash  [Daedalus OS v2.0]");
-    else if (strcmp(argv[1], "version") == 0)
-      print_info("Daedalus OS v2.0  (C kernel build)");
-    else {
-      char err[64];
-      snprintf(err, sizeof(err), "sys: unknown sub-command '%s'", argv[1]);
-      print_error(err);
-    }
+    const char *sub = argc > 1 ? argv[1] : "info";
+    if (strcmp(sub, "cpu") == 0) printf("x86 32-bit Bare-Metal\n");
+    else if (strcmp(sub, "memory") == 0) printf("1MB static heap\n");
+    else if (strcmp(sub, "version") == 0) printf("Daedalus Runtime v2.1 (Handcrafted)\n");
+    else printf("Daedalus OS x86 Kernel\n");
     if (!from_loop)
       shell_prompt(s);
     return;
@@ -824,7 +658,7 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
 
   /* ── whoami ────────────────────────────────────────────────── */
   if (strcmp(cmd, "whoami") == 0) {
-    print_info("daedalus");
+    printf("daedalus-pilot\n");
     if (!from_loop)
       shell_prompt(s);
     return;
@@ -832,22 +666,7 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
 
   /* ── uptime ────────────────────────────────────────────────── */
   if (strcmp(cmd, "uptime") == 0) {
-    long up = (long)time(NULL) - s->boot_time;
-    printf(ANSI_BGREEN "up %ld seconds\n" ANSI_RESET, up);
-    fflush(stdout);
-    if (!from_loop)
-      shell_prompt(s);
-    return;
-  }
-
-  /* ── ping (nc) ─────────────────────────────────────────────── */
-  if (strcmp(cmd, "ping") == 0) {
-    const char *host = argc > 1 ? argv[1] : "localhost";
-    const char *port = argc > 2 ? argv[2] : "0";
-    printf(ANSI_BGREEN "ping: probing %s:%s ... " ANSI_BWHITE "open" ANSI_GRAY
-                       " (simulated)\n" ANSI_RESET,
-           host, port);
-    fflush(stdout);
+    printf("0s (bare-metal mock)\n");
     if (!from_loop)
       shell_prompt(s);
     return;
@@ -855,54 +674,41 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
 
   /* ── ports ─────────────────────────────────────────────────── */
   if (strcmp(cmd, "ports") == 0) {
-    char target[MAX_PATH];
-    strncpy(target, "/ports", MAX_PATH - 1);
-    FSNode *node = fs_get_node(s->fs_root, target);
     char listing[MAX_CONTENT];
-    fs_list_dir(node, listing, sizeof(listing));
-    printf("Devices in /ports:\n  %s\n", listing);
-    fflush(stdout);
+    FSNode *ports = fs_get_node(s->fs_root, "/ports");
+    if (ports) {
+      fs_list_dir(ports, listing, sizeof(listing));
+      printf("%s\n", listing);
+    }
     if (!from_loop)
       shell_prompt(s);
     return;
   }
 
-  /* ── train (sl) ────────────────────────────────────────────── */
-  if (strcmp(cmd, "train") == 0) {
-    fputs(TRAIN_ART, stdout);
-    fflush(stdout);
+  /* ── r - <cmd> (loop) ───────────────────────────────────────── */
+  if (strcmp(cmd, "r") == 0 && argc >= 3 && strcmp(argv[1], "-") == 0) {
+    char cmd_to_run[MAX_LINE] = "";
+    for (int i = 2; i < argc; i++) {
+      if (i > 2) strncat(cmd_to_run, " ", MAX_LINE - strlen(cmd_to_run) - 1);
+      strncat(cmd_to_run, argv[i], MAX_LINE - strlen(cmd_to_run) - 1);
+    }
+    s->loop_active = 1;
+    print_info("Starting loop. Press keys to exit (bare-metal mock).");
+    while (s->loop_active) {
+        shell_execute(s, cmd_to_run, 1);
+        // Busy wait
+        for (volatile int i = 0; i < 10000000; i++);
+        s->loop_active = 0; // Only run once for now in bare-metal
+    }
     if (!from_loop)
-      shell_prompt(s);
-    return;
-  }
-
-  /* ── desk ──────────────────────────────────────────────────── */
-  if (strcmp(cmd, "desk") == 0) {
-    print_warn("Desktop mode is only available in the web UI (index.html).");
-    if (!from_loop)
-      shell_prompt(s);
-    return;
-  }
-
-  /* ── cls / clear ───────────────────────────────────────────── */
-  if (strcmp(cmd, "cls") == 0 || strcmp(cmd, "clear") == 0) {
-    fputs("\033[2J\033[H", stdout);
-    fflush(stdout);
-    if (!from_loop)
-      shell_prompt(s);
+        shell_prompt(s);
     return;
   }
 
   /* ── history ───────────────────────────────────────────────── */
   if (strcmp(cmd, "history") == 0) {
-    if (s->hist_count == 0) {
-      print_warn("history: no commands yet.");
-    } else {
-      int start = s->hist_count > 20 ? s->hist_count - 20 : 0;
-      for (int i = start; i < s->hist_count; i++)
-        printf(ANSI_GRAY "%3d " ANSI_RESET "%s\n", i + 1, s->history[i]);
-    }
-    fflush(stdout);
+    for (int i = 0; i < s->hist_count; i++)
+      printf("%3d  %s\n", i + 1, s->history[i]);
     if (!from_loop)
       shell_prompt(s);
     return;
@@ -911,20 +717,13 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
   /* ── alias ─────────────────────────────────────────────────── */
   if (strcmp(cmd, "alias") == 0) {
     if (argc == 1) {
-      if (s->alias_count == 0)
-        print_warn("alias: no aliases set.");
-      else
-        for (int i = 0; i < s->alias_count; i++)
-          printf(ANSI_BYELLOW "alias " ANSI_BWHITE "%s" ANSI_RESET "='%s'\n",
-                 s->aliases[i].key, s->aliases[i].val);
+      for (int i = 0; i < s->alias_count; i++)
+        printf("alias %s='%s'\n", s->aliases[i].key, s->aliases[i].val);
     } else if (argc >= 3) {
       alias_set(s, argv[1], argv[2]);
-      printf(ANSI_BGREEN "alias set: " ANSI_RESET "%s → %s\n", argv[1],
-             argv[2]);
     } else {
-      print_error("alias: usage: alias <key> <value>");
+      print_error("alias: usage: alias [name value]");
     }
-    fflush(stdout);
     if (!from_loop)
       shell_prompt(s);
     return;
@@ -932,42 +731,26 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
 
   /* ── unalias ───────────────────────────────────────────────── */
   if (strcmp(cmd, "unalias") == 0) {
-    if (argc < 2) {
-      print_error("unalias: usage: unalias <key>");
-      if (!from_loop)
-        shell_prompt(s);
-      return;
-    }
-    alias_unset(s, argv[1]);
-    print_info("alias removed.");
+    if (argc < 2) print_error("unalias: usage: unalias <name>");
+    else alias_unset(s, argv[1]);
     if (!from_loop)
       shell_prompt(s);
     return;
   }
 
-  /* ── set ───────────────────────────────────────────────────── */
+  /* ── set (env) ─────────────────────────────────────────────── */
   if (strcmp(cmd, "set") == 0) {
-    if (argc >= 3) {
-      env_set(s, argv[1], argv[2]);
-      printf(ANSI_BGREEN "set: " ANSI_RESET "%s=%s\n", argv[1], argv[2]);
-    } else {
-      print_error("set: usage: set <key> <value>");
-    }
-    fflush(stdout);
+    if (argc >= 3) env_set(s, argv[1], argv[2]);
+    else print_error("set: usage: set <key> <val>");
     if (!from_loop)
       shell_prompt(s);
     return;
   }
 
-  /* ── env ───────────────────────────────────────────────────── */
+  /* ── env ──────────────────────────────────────────────────── */
   if (strcmp(cmd, "env") == 0) {
-    if (s->env_count == 0)
-      print_warn("env: no variables set.");
-    else
-      for (int i = 0; i < s->env_count; i++)
-        printf(ANSI_BYELLOW "%s" ANSI_RESET "=%s\n", s->envvars[i].key,
-               s->envvars[i].val);
-    fflush(stdout);
+    for (int i = 0; i < s->env_count; i++)
+      printf("%s=%s\n", s->envvars[i].key, s->envvars[i].val);
     if (!from_loop)
       shell_prompt(s);
     return;
@@ -975,73 +758,33 @@ void shell_execute(ShellState *s, const char *raw_line, int from_loop) {
 
   /* ── unset ─────────────────────────────────────────────────── */
   if (strcmp(cmd, "unset") == 0) {
-    if (argc < 2) {
-      print_error("unset: usage: unset <key>");
-      if (!from_loop)
-        shell_prompt(s);
-      return;
-    }
-    env_unset(s, argv[1]);
-    print_info("unset done.");
+    if (argc < 2) print_error("unset: usage: unset <key>");
+    else env_unset(s, argv[1]);
     if (!from_loop)
       shell_prompt(s);
     return;
   }
 
-  /* ── r - (repeat loop) ─────────────────────────────────────── */
-  if (strncmp(line, "r - ", 4) == 0) {
-    const char *loop_cmd = line + 4;
-    if (!loop_cmd || loop_cmd[0] == '\0') {
-      print_error("r: usage: r - <command>");
-      if (!from_loop)
-        shell_prompt(s);
-      return;
-    }
-    if (s->loop_active) {
-      print_warn(
-          "r: a loop is already running. Press Ctrl+C to stop it first.");
-      if (!from_loop)
-        shell_prompt(s);
-      return;
-    }
-    s->loop_active = 1;
-    LoopArg *la = malloc(sizeof(LoopArg));
-    la->state = s;
-    strncpy(la->cmd, loop_cmd, MAX_LINE - 1);
-
-    pthread_t tid;
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-    pthread_create(&tid, &attr, repeat_thread, la);
-    pthread_attr_destroy(&attr);
-
-    printf(ANSI_BGREEN "Repeating: " ANSI_RESET "%s  " ANSI_GRAY
-                       "(Ctrl+C to stop)\n" ANSI_RESET,
-           loop_cmd);
-    fflush(stdout);
+  /* ── clear ─────────────────────────────────────────────────── */
+  if (strcmp(cmd, "cls") == 0 || strcmp(cmd, "clear") == 0) {
+    // VGA Clear is handled by high-level if possible, but for now just scroll
+    for (int i=0; i<25; i++) printf("\n");
     if (!from_loop)
       shell_prompt(s);
     return;
   }
 
-  /* ── mock commands ─────────────────────────────────────────── */
-  static const char *mock_cmds[] = {"scan",  "remove", "run",  "start", "stop",
-                                    "reset", "peek",   "sync", NULL};
-  for (int i = 0; mock_cmds[i]; i++) {
-    if (strcmp(cmd, mock_cmds[i]) == 0) {
-      printf(ANSI_GRAY "[mock] %s executed.\n" ANSI_RESET, cmd);
-      fflush(stdout);
-      if (!from_loop)
-        shell_prompt(s);
-      return;
-    }
+  /* ── train ─────────────────────────────────────────────────── */
+  if (strcmp(cmd, "train") == 0) {
+    printf("%s\n", TRAIN_ART);
+    if (!from_loop)
+      shell_prompt(s);
+    return;
   }
 
-  /* ── unknown ───────────────────────────────────────────────── */
-  char err[MAX_LINE + 32];
-  snprintf(err, sizeof(err), "daedalus: command not found: %s  (try 'help')",
-           cmd);
+  /* ── Command not found ─────────────────────────────────────── */
+  char err[MAX_NAME + 32];
+  snprintf(err, sizeof(err), "daedalus: %s: command not found", cmd);
   print_error(err);
   if (!from_loop)
     shell_prompt(s);

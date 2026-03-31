@@ -1,3 +1,4 @@
+#include "libc.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -8,10 +9,6 @@ static uint16_t *vga_buffer = (uint16_t*) 0xB8000;
 static size_t term_col = 0;
 static size_t term_row = 0;
 static uint8_t term_color = 0x0F;
-
-static inline void outb(uint16_t port, uint8_t val) {
-    __asm__ volatile ( "outb %0, %1" : : "a"(val), "Nd"(port) );
-}
 
 void vga_set_cursor(int x, int y) {
     uint16_t pos = y * VGA_WIDTH + x;
@@ -49,7 +46,14 @@ void vga_print_char(char c) {
         term_col = 0;
         if (++term_row == VGA_HEIGHT) { term_row--; vga_scroll(); }
     } else if (c == '\b') {
-        if (term_col > 0) term_col--;
+        if (term_col > 0) {
+            term_col--;
+            vga_buffer[term_row * VGA_WIDTH + term_col] = ((uint16_t)term_color << 8) | ' ';
+        } else if (term_row > 0) {
+            term_row--;
+            term_col = VGA_WIDTH - 1;
+            vga_buffer[term_row * VGA_WIDTH + term_col] = ((uint16_t)term_color << 8) | ' ';
+        }
     } else if (c == '\r') {
         term_col = 0;
     } else {
