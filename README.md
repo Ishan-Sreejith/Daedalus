@@ -3,6 +3,8 @@
 A web-based OS simulator with a terminal-first interface and a toggleable desktop view.
 The local kernel is now written in **C** (C11) for speed, direct system access, and zero runtime overhead.
 
+## Note: If you would like to use the local version in QEMU, go to https://github.com/Ishan-Sreejith/DaedalusC/tree/main
+
 ## What this repo includes
 
 | File | Description |
